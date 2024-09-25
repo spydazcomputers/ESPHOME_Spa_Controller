@@ -1,0 +1,225 @@
+esphome:
+  name: spa-controller
+  friendly_name: Spa Controller
+
+esp32:
+  board: upesy_wroom
+  framework:
+    type: esp-idf
+    
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "meYMpUo1HqkpkR27l0lvgatyVElKyqNFeNGdFiFmaNI="
+
+ota:
+  - platform: esphome
+    password: "a3e355c58dd9f84465293ebdcc2b0e32"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Spa-Controller Fallback Hotspot"
+    password: "ZhJIBrjT85cJ"
+
+captive_portal:
+    
+#Apollo 11 Spa Controller Pinout
+# Pin 1 — 3.3V +
+
+# Pin 2 — Heater high limit one
+output:
+- platform: gpio
+  pin: 
+    number: GPIO16
+    mode: 
+      input: True
+      output: True
+      pullup: True
+      open_drain: True
+  inverted: False
+  id: r_HiLim_1
+# Pin 3 — Heater high limit two
+- platform: gpio
+  pin:  
+    number: GPIO16
+    mode: 
+      input: True
+      output: True
+      pullup: True
+      open_drain: True
+  inverted: False
+  id: r_HiLim_2
+# Pin 4 — Heater coil
+  - platform: gpio
+    pin: 
+      number: GPIO13
+      mode: 
+        input: True
+        output: True
+        pullup: True
+        open_drain: True
+    id: r_Heater
+    inverted: False
+    name: Heater 
+switch:
+# Pin 10 — Pump one low speed
+  - platform: gpio
+    pin: 
+      number: GPIO26
+      mode: 
+        input: True
+        output: True
+        pullup: True
+        open_drain: True
+    id: r_P1_low
+    inverted: False
+    interlock: r_P1_high #interlock required if High and Low are on, can burn up pump
+    name: Pump 1 Low
+# Pin 11 — Pump one high speed 
+  - platform: gpio
+    pin: 
+      number: GPIO27
+      mode: 
+        input: True
+        output: True
+        pullup: True
+        open_drain: True
+    id: r_P1_high
+    inverted: False
+    interlock: r_P1_low #interlock required if High and Low are on, can burn up pump
+    name: Pump 1 High
+# Pin 12 — Fiber optic light 
+# Pin 13 — Circulator pump
+  - platform: gpio
+    pin: 
+      number: GPIO32
+      mode: 
+        input: True
+        output: True
+        pullup: True
+        open_drain: True
+    id: r_Circ
+    inverted: False
+    name: Circ Pump
+# Pin 14 — Blower (Alternativly can be pump 2 Low Speed)
+# Pin 15 — Pump two high speed 
+  - platform: gpio
+    pin: 
+      number: GPIO33
+      mode: 
+        input: True
+        output: True
+        pullup: True
+        open_drain: True
+    id: r_P2_high
+    inverted: False
+    name: Pump 2 High
+
+sensor:
+  #This section reads the Inlet, Outlet and Jacuzzi Temperatures. 
+  #Inlet and Outlet are used to determine if water is flowing as well as for hi limit cutout
+  #Jacuzzi temp is used for heating demand
+
+# Pin 5 — Outlet temperature
+  #Read The Raw Voltage
+  - platform: adc
+    id: outlet_sensor
+    pin: GPIO34
+    update_interval: 5s
+    name: Outlet Voltage
+    attenuation: 11db
+
+  #Convert To Resistance
+  - platform: resistance
+    id: outlet_resistance
+    sensor: outlet_sensor
+    configuration: DOWNSTREAM
+    resistor: 9.55kOhm
+    name: Outlet Resistance Sensor
+
+  #Scale To Temperature
+  - platform: ntc
+    sensor: outlet_resistance
+    calibration:
+    - 10.0kOhm -> 25°C
+    - 32.665kOhm -> 0°C
+    - 6.530kOhm -> 35°C
+    id: outlet_temp
+    name: Outlet Temperature
+# Pin 6 — Inlet temperature 
+  #Read The Raw Voltage
+  - platform: adc
+    id: inlet_sensor
+    pin: GPIO35
+    update_interval: 5s
+    name: GPIO35 Voltage
+    attenuation: 11db
+  #Convert To Resistance
+  - platform: resistance
+    id: inlet_resistance
+    sensor: inlet_sensor
+    configuration: DOWNSTREAM
+    resistor: 9.55kOhm
+    name: Inlet Resistance Sensor
+  #Scale To Temperature
+  - platform: ntc
+    sensor: inlet_resistance
+    calibration:
+    - 10.0kOhm -> 25°C
+    - 32.665kOhm -> 0°C
+    - 6.530kOhm -> 35°C
+    id: inlet_temp
+    name: Inlet Temperature  
+# Pin 6 — Inlet temperature 
+  #Read The Raw Voltage
+  - platform: adc
+    id: spa_sensor
+    pin: GPIO39
+    update_interval: 5s
+    name: Spa Voltage
+    attenuation: 11db
+  #Convert To Resistance
+  - platform: resistance
+    id: spa_resistance
+    sensor: spa_sensor
+    configuration: DOWNSTREAM
+    resistor: 9.55kOhm
+    name: Spa Resistance Sensor
+  #Scale To Temperature
+  - platform: ntc
+    sensor: spa_resistance
+    calibration:
+    - 10.0kOhm -> 25°C
+    - 32.665kOhm -> 0°C
+    - 6.530kOhm -> 35°C
+    id: spa_temp
+    name: Spa Temperature  
+
+# Pin 7 — 3.3V + (Isolated MCU suppl)
+# Pin 8 — Unknown 
+# Pin 9 — 0v (This is isolated from ground, do not ground MCC it will result in 12v on IO pins)
+
+#Add a dial style controller for turning the heat on / off and setting the temperature
+climate:
+  - platform: thermostat
+    name: "Spa Temp Controller"
+    sensor: temperature
+    min_heating_off_time: 60s
+    min_heating_run_time: 3s
+    min_idle_time: 240s
+    heat_action:
+      - switch.turn_on: virtual_heater
+    idle_action:
+      - switch.turn_off: virtual_heater
+    visual: 
+      max_temperature: 40.6
+      min_temperature: 5
+
+
