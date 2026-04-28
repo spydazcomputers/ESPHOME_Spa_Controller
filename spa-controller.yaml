@@ -1,6 +1,10 @@
 esphome:
   name: spa-controller
   friendly_name: Spa Controller
+  on_boot:
+    priority: 600
+    then:
+      - script.execute: startup_test_sequence
 
 esp32:
   board: upesy_wroom
@@ -29,106 +33,169 @@ wifi:
     password: "ZhJIBrjT85cJ"
 
 captive_portal:
-    
+
+# Global variables for state tracking and filter cycle
+globals:
+  - id: startup_test_complete
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  
+  - id: high_temp_alarm
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  
+  - id: hi_limit_triggered
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  
+  - id: heater_temp_baseline_inlet
+    type: float
+    restore_value: no
+  
+  - id: heater_temp_baseline_outlet
+    type: float
+    restore_value: no
+  
+  - id: temp_deadband
+    type: float
+    restore_value: no
+    initial_value: '0.5'
+  
+  - id: filter_last_run_time
+    type: uint32_t
+    restore_value: yes
+    initial_value: '0'
+  
+  - id: filter_cycle_enabled
+    type: bool
+    restore_value: yes
+    initial_value: 'true'
+
 #Apollo 11 Spa Controller Pinout
 # Pin 1 — 3.3V +
 
-# Pin 2 — Heater high limit one
 output:
-- platform: gpio
-  pin: 
-    number: GPIO16
-    mode: 
-      input: True
-      output: True
-      pullup: True
-      open_drain: True
-  inverted: False
-  id: r_HiLim_1
-# Pin 3 — Heater high limit two
-- platform: gpio
-  pin:  
-    number: GPIO16
-    mode: 
-      input: True
-      output: True
-      pullup: True
-      open_drain: True
-  inverted: False
-  id: r_HiLim_2
-# Pin 4 — Heater coil
+  # Pin 2 — Heater high limit one
+  - platform: gpio
+    pin: 
+      number: GPIO16
+      mode: 
+        input: true
+        output: true
+        pullup: true
+        open_drain: true
+    inverted: false
+    id: r_HiLim_1
+  
+  # Pin 3 — Heater high limit two
+  - platform: gpio
+    pin:  
+      number: GPIO17
+      mode: 
+        input: true
+        output: true
+        pullup: true
+        open_drain: true
+    inverted: false
+    id: r_HiLim_2
+  
+  # Pin 4 — Heater coil
   - platform: gpio
     pin: 
       number: GPIO13
       mode: 
-        input: True
-        output: True
-        pullup: True
-        open_drain: True
+        input: true
+        output: true
+        pullup: true
+        open_drain: true
     id: r_Heater
-    inverted: False
-    name: Heater 
+    inverted: false
+    name: Heater
+
 switch:
-# Pin 10 — Pump one low speed
+  # Pin 10 — Pump one low speed
   - platform: gpio
     pin: 
       number: GPIO26
       mode: 
-        input: True
-        output: True
-        pullup: True
-        open_drain: True
+        input: true
+        output: true
+        pullup: true
+        open_drain: true
     id: r_P1_low
-    inverted: False
-    interlock: r_P1_high #interlock required if High and Low are on, can burn up pump
+    inverted: false
+    interlock: r_P1_high
     name: Pump 1 Low
-# Pin 11 — Pump one high speed 
+  
+  # Pin 11 — Pump one high speed 
   - platform: gpio
     pin: 
       number: GPIO27
       mode: 
-        input: True
-        output: True
-        pullup: True
-        open_drain: True
+        input: true
+        output: true
+        pullup: true
+        open_drain: true
     id: r_P1_high
-    inverted: False
-    interlock: r_P1_low #interlock required if High and Low are on, can burn up pump
+    inverted: false
+    interlock: r_P1_low
     name: Pump 1 High
-# Pin 12 — Fiber optic light 
-# Pin 13 — Circulator pump
+  
+  # Pin 13 — Circulator pump
   - platform: gpio
     pin: 
       number: GPIO32
       mode: 
-        input: True
-        output: True
-        pullup: True
-        open_drain: True
+        input: true
+        output: true
+        pullup: true
+        open_drain: true
     id: r_Circ
-    inverted: False
+    inverted: false
     name: Circ Pump
-# Pin 14 — Blower (Alternativly can be pump 2 Low Speed)
-# Pin 15 — Pump two high speed 
+  
+  # Pin 15 — Pump two high speed 
   - platform: gpio
     pin: 
       number: GPIO33
       mode: 
-        input: True
-        output: True
-        pullup: True
-        open_drain: True
+        input: true
+        output: true
+        pullup: true
+        open_drain: true
     id: r_P2_high
-    inverted: False
+    inverted: false
     name: Pump 2 High
+  
+  # Virtual heater switch that enforces pump interlock
+  - platform: template
+    name: "Virtual Heater"
+    id: virtual_heater
+    optimistic: true
+    turn_on_action:
+      - output.turn_on: r_HiLim_1
+      - output.turn_on: r_HiLim_2
+      - delay: 500ms
+      - switch.turn_on: r_P1_low
+      - delay: 500ms
+      - output.turn_on: r_Heater
+    turn_off_action:
+      - output.turn_off: r_Heater
+      - delay: 500ms
+      - switch.turn_off: r_P1_low
+      - output.turn_off: r_HiLim_2
+      - output.turn_off: r_HiLim_1
 
 sensor:
-  #This section reads the Inlet, Outlet and Jacuzzi Temperatures. 
-  #Inlet and Outlet are used to determine if water is flowing as well as for hi limit cutout
-  #Jacuzzi temp is used for heating demand
+  # This section reads the Inlet, Outlet and Jacuzzi Temperatures. 
+  # Inlet and Outlet are used to determine if water is flowing as well as for hi limit cutout
+  # Jacuzzi temp is used for heating demand
 
-# Pin 5 — Outlet temperature
-  #Read The Raw Voltage
+  # Pin 5 — Outlet temperature
+  # Read The Raw Voltage
   - platform: adc
     id: outlet_sensor
     pin: GPIO34
@@ -136,7 +203,7 @@ sensor:
     name: Outlet Voltage
     attenuation: 11db
 
-  #Convert To Resistance
+  # Convert To Resistance
   - platform: resistance
     id: outlet_resistance
     sensor: outlet_sensor
@@ -144,82 +211,370 @@ sensor:
     resistor: 9.55kOhm
     name: Outlet Resistance Sensor
 
-  #Scale To Temperature
+  # Scale To Temperature
   - platform: ntc
     sensor: outlet_resistance
     calibration:
-    - 10.0kOhm -> 25°C
-    - 32.665kOhm -> 0°C
-    - 6.530kOhm -> 35°C
+      - 10.0kOhm -> 25°C
+      - 32.665kOhm -> 0°C
+      - 6.530kOhm -> 35°C
     id: outlet_temp
     name: Outlet Temperature
-# Pin 6 — Inlet temperature 
-  #Read The Raw Voltage
+    on_value:
+      then:
+        - script.execute: check_high_temp_alarm
+
+  # Pin 6 — Inlet temperature 
+  # Read The Raw Voltage
   - platform: adc
     id: inlet_sensor
     pin: GPIO35
     update_interval: 5s
     name: GPIO35 Voltage
     attenuation: 11db
-  #Convert To Resistance
+  
+  # Convert To Resistance
   - platform: resistance
     id: inlet_resistance
     sensor: inlet_sensor
     configuration: DOWNSTREAM
     resistor: 9.55kOhm
     name: Inlet Resistance Sensor
-  #Scale To Temperature
+  
+  # Scale To Temperature
   - platform: ntc
     sensor: inlet_resistance
     calibration:
-    - 10.0kOhm -> 25°C
-    - 32.665kOhm -> 0°C
-    - 6.530kOhm -> 35°C
+      - 10.0kOhm -> 25°C
+      - 32.665kOhm -> 0°C
+      - 6.530kOhm -> 35°C
     id: inlet_temp
-    name: Inlet Temperature  
-# Pin 6 — Inlet temperature 
-  #Read The Raw Voltage
+    name: Inlet Temperature
+    on_value:
+      then:
+        - script.execute: check_high_temp_alarm
+
+  # Pin 6 — Spa temperature 
+  # Read The Raw Voltage
   - platform: adc
     id: spa_sensor
     pin: GPIO39
     update_interval: 5s
     name: Spa Voltage
     attenuation: 11db
-  #Convert To Resistance
+  
+  # Convert To Resistance
   - platform: resistance
     id: spa_resistance
     sensor: spa_sensor
     configuration: DOWNSTREAM
     resistor: 9.55kOhm
     name: Spa Resistance Sensor
-  #Scale To Temperature
+  
+  # Scale To Temperature
   - platform: ntc
     sensor: spa_resistance
     calibration:
-    - 10.0kOhm -> 25°C
-    - 32.665kOhm -> 0°C
-    - 6.530kOhm -> 35°C
+      - 10.0kOhm -> 25°C
+      - 32.665kOhm -> 0°C
+      - 6.530kOhm -> 35°C
     id: spa_temp
-    name: Spa Temperature  
+    name: Spa Temperature
 
-# Pin 7 — 3.3V + (Isolated MCU suppl)
-# Pin 8 — Unknown 
-# Pin 9 — 0v (This is isolated from ground, do not ground MCC it will result in 12v on IO pins)
+binary_sensor:
+  - platform: template
+    name: "Startup Test Complete"
+    id: startup_test_complete_sensor
+    lambda: 'return id(startup_test_complete);'
+  
+  - platform: template
+    name: "High Temperature Alarm"
+    id: high_temp_alarm_sensor
+    lambda: 'return id(high_temp_alarm);'
+  
+  - platform: template
+    name: "Hi-Limit Relay Triggered"
+    id: hi_limit_triggered_sensor
+    lambda: 'return id(hi_limit_triggered);'
 
-#Add a dial style controller for turning the heat on / off and setting the temperature
+number:
+  - platform: template
+    name: "Filter Cycle Interval (minutes)"
+    id: filter_interval_minutes
+    min_value: 60
+    max_value: 1440
+    step: 10
+    restore_value: yes
+    initial_value: 240
+    unit_of_measurement: "min"
+  
+  - platform: template
+    name: "Filter Cycle Runtime (minutes)"
+    id: filter_runtime_minutes
+    min_value: 1
+    max_value: 120
+    step: 1
+    restore_value: yes
+    initial_value: 60
+    unit_of_measurement: "min"
+
+script:
+  # Startup test sequence - validates all heater safety relays and thermostats
+  - id: startup_test_sequence
+    then:
+      - logger.log: "Starting Spa Controller Startup Test Sequence"
+      
+      # Wait for temperature sensors to stabilize
+      - logger.log: "Waiting for temperature sensors to stabilize..."
+      - delay: 5s
+      
+      # Verify sensors have valid readings
+      - if:
+          condition:
+            and:
+              - sensor.in_range:
+                  id: inlet_temp
+                  above: -10
+                  below: 100
+              - sensor.in_range:
+                  id: outlet_temp
+                  above: -10
+                  below: 100
+          then:
+            - logger.log: "Temperature sensors valid. Beginning heater test."
+            - script.execute: heater_relay_test_cycle_1
+          else:
+            - logger.log: "ERROR: Temperature sensors invalid. Test aborted."
+            - globals.set:
+                id: startup_test_complete
+                value: 'false'
+            - homeassistant.service:
+                service: persistent_notification.create
+                data:
+                  title: "Spa Controller Startup Error"
+                  message: "Temperature sensors failed validation"
+  
+  # First cycle of heater relay testing
+  - id: heater_relay_test_cycle_1
+    then:
+      - logger.log: "=== HEATER TEST CYCLE 1 START ==="
+      - logger.log: "Starting Pump 1 Low for water flow establishment..."
+      - switch.turn_on: r_P1_low
+      - delay: 10s
+      
+      # Record baseline temperatures
+      - globals.set:
+          id: heater_temp_baseline_inlet
+          value: !lambda 'return id(inlet_temp).state;'
+      - globals.set:
+          id: heater_temp_baseline_outlet
+          value: !lambda 'return id(outlet_temp).state;'
+      - logger.log:
+          format: "Baseline temps - Inlet: %.1f°C, Outlet: %.1f°C"
+          args: ['id(heater_temp_baseline_inlet)', 'id(heater_temp_baseline_outlet)']
+      
+      # Step 1: Hi-Limit 1 ON only (Hi-Limit 2 OFF, Heater OFF)
+      - logger.log: "Step 1: Engage Hi-Limit 1 only. No temp change expected."
+      - output.turn_on: r_HiLim_1
+      - delay: 10s
+      - logger.log:
+          format: "After Hi-Limit 1 ON - Inlet: %.1f°C, Outlet: %.1f°C (should match baseline)"
+          args: ['id(inlet_temp).state', 'id(outlet_temp).state']
+      
+      # Step 2: Hi-Limit 2 ON (both now ON, Heater still OFF)
+      - logger.log: "Step 2: Engage Hi-Limit 2. Both Hi-Limits ON, heater OFF. No temp change expected."
+      - output.turn_on: r_HiLim_2
+      - delay: 10s
+      - logger.log:
+          format: "After Hi-Limit 2 ON - Inlet: %.1f°C, Outlet: %.1f°C (should match baseline)"
+          args: ['id(inlet_temp).state', 'id(outlet_temp).state']
+      
+      # Step 3: Heater ON (both Hi-Limits ON)
+      - logger.log: "Step 3: Engage Heater. TEMPERATURE RISE EXPECTED."
+      - output.turn_on: r_Heater
+      - delay: 30s
+      - logger.log:
+          format: "After Heater ON - Inlet: %.1f°C, Outlet: %.1f°C (should show temp increase)"
+          args: ['id(inlet_temp).state', 'id(outlet_temp).state']
+      
+      # Step 4: Hi-Limit 1 OFF (heater circuit breaks)
+      - logger.log: "Step 4: Disable Hi-Limit 1. Heater circuit breaks. Temperature should return to normal."
+      - output.turn_off: r_HiLim_1
+      - delay: 10s
+      - logger.log:
+          format: "After Hi-Limit 1 OFF - Inlet: %.1f°C, Outlet: %.1f°C (temp should stabilize)"
+          args: ['id(inlet_temp).state', 'id(outlet_temp).state']
+      
+      # Step 5: Hi-Limit 1 RE-ON
+      - logger.log: "Step 5: Re-engage Hi-Limit 1. TEMPERATURE RISE EXPECTED AGAIN."
+      - output.turn_on: r_HiLim_1
+      - delay: 20s
+      - logger.log:
+          format: "After Hi-Limit 1 RE-ON - Inlet: %.1f°C, Outlet: %.1f°C (should show temp increase)"
+          args: ['id(inlet_temp).state', 'id(outlet_temp).state']
+      
+      # Step 6: Hi-Limit 2 OFF (heater stops)
+      - logger.log: "Step 6: Disable Hi-Limit 2. Heater stops. Temperature should stabilize."
+      - output.turn_off: r_HiLim_2
+      - delay: 10s
+      - logger.log:
+          format: "After Hi-Limit 2 OFF - Inlet: %.1f°C, Outlet: %.1f°C (temp should stabilize)"
+          args: ['id(inlet_temp).state', 'id(outlet_temp).state']
+      
+      # Step 7: Hi-Limit 2 RE-ON
+      - logger.log: "Step 7: Re-engage Hi-Limit 2. Validates independent Hi-Limit 2 operation."
+      - output.turn_on: r_HiLim_2
+      - delay: 20s
+      - logger.log:
+          format: "After Hi-Limit 2 RE-ON - Inlet: %.1f°C, Outlet: %.1f°C (should show temp increase)"
+          args: ['id(inlet_temp).state', 'id(outlet_temp).state']
+      
+      # Step 8: Heater OFF
+      - logger.log: "Step 8: Disable Heater."
+      - output.turn_off: r_Heater
+      - delay: 5s
+      
+      # Step 9: Disable all relays
+      - logger.log: "Step 9: Disabling all safety relays."
+      - output.turn_off: r_HiLim_2
+      - output.turn_off: r_HiLim_1
+      - switch.turn_off: r_P1_low
+      - delay: 5s
+      
+      - logger.log: "=== HEATER TEST CYCLE 1 COMPLETE ==="
+      - script.execute: heater_relay_test_cycle_2
+  
+  # Second cycle - verification
+  - id: heater_relay_test_cycle_2
+    then:
+      - logger.log: "=== HEATER TEST CYCLE 2 START (Verification) ==="
+      - logger.log: "Starting Pump 1 Low for water flow..."
+      - switch.turn_on: r_P1_low
+      - delay: 10s
+      
+      # Quick verification cycle
+      - logger.log: "Verification: Hi-Limit 1 ON"
+      - output.turn_on: r_HiLim_1
+      - delay: 5s
+      
+      - logger.log: "Verification: Hi-Limit 2 ON"
+      - output.turn_on: r_HiLim_2
+      - delay: 5s
+      
+      - logger.log: "Verification: Heater ON - expecting temperature rise"
+      - output.turn_on: r_Heater
+      - delay: 15s
+      - logger.log:
+          format: "Cycle 2 Heater active - Inlet: %.1f°C, Outlet: %.1f°C"
+          args: ['id(inlet_temp).state', 'id(outlet_temp).state']
+      
+      - logger.log: "Verification: Disabling all relays"
+      - output.turn_off: r_Heater
+      - output.turn_off: r_HiLim_2
+      - output.turn_off: r_HiLim_1
+      - switch.turn_off: r_P1_low
+      - delay: 5s
+      
+      - logger.log: "=== HEATER TEST CYCLE 2 COMPLETE ==="
+      - logger.log: "=== STARTUP TEST SEQUENCE COMPLETE - System Ready ==="
+      - globals.set:
+          id: startup_test_complete
+          value: 'true'
+      - homeassistant.service:
+          service: persistent_notification.create
+          data:
+            title: "Spa Controller Startup Complete"
+            message: "All heater relays and thermostats tested successfully"
+  
+  # Check for high temperature alarm condition
+  - id: check_high_temp_alarm
+    then:
+      - if:
+          condition:
+            or:
+              - sensor.in_range:
+                  id: inlet_temp
+                  above: 42.0
+              - sensor.in_range:
+                  id: outlet_temp
+                  above: 42.0
+              - sensor.in_range:
+                  id: spa_temp
+                  above: 42.0
+          then:
+            - if:
+                condition:
+                  lambda: 'return !id(high_temp_alarm);'
+                then:
+                  - logger.log:
+                      format: "CRITICAL: High temperature alarm! Inlet: %.1f°C, Outlet: %.1f°C, Spa: %.1f°C"
+                      args: ['id(inlet_temp).state', 'id(outlet_temp).state', 'id(spa_temp).state']
+                  - globals.set:
+                      id: high_temp_alarm
+                      value: 'true'
+                  - globals.set:
+                      id: hi_limit_triggered
+                      value: 'true'
+                  - output.turn_off: r_HiLim_1
+                  - output.turn_off: r_HiLim_2
+                  - switch.turn_off: r_P1_low
+                  - switch.turn_off: r_P1_high
+                  - output.turn_off: r_Heater
+                  - homeassistant.service:
+                      service: persistent_notification.create
+                      data:
+                        title: "Spa Controller - CRITICAL TEMPERATURE ALARM"
+                        message: "Temperature exceeded 42°C. Heater disabled. Manual intervention required."
+          else:
+            - if:
+                condition:
+                  lambda: 'return id(high_temp_alarm);'
+                then:
+                  - logger.log: "Temperature returned to safe range. High temp alarm cleared."
+                  - globals.set:
+                      id: high_temp_alarm
+                      value: 'false'
+  
+  # Filter cycle automation
+  - id: filter_cycle_loop
+    then:
+      - if:
+          condition:
+            lambda: 'return id(filter_cycle_enabled);'
+          then:
+            - if:
+                condition:
+                  lambda: 'return (millis() - id(filter_last_run_time)) > (id(filter_interval_minutes).state * 60 * 1000);'
+                then:
+                  - logger.log: "Starting filter cycle"
+                  - globals.set:
+                      id: filter_last_run_time
+                      value: !lambda 'return millis();'
+                  - switch.turn_on: r_P2_high
+                  - delay: !lambda 'return id(filter_runtime_minutes).state * 60 * 1000;'
+                  - switch.turn_off: r_P2_high
+                  - logger.log: "Filter cycle complete"
+
+interval:
+  - interval: 60s
+    then:
+      - script.execute: filter_cycle_loop
+
 climate:
   - platform: thermostat
     name: "Spa Temp Controller"
-    sensor: temperature
+    sensor: spa_temp
     min_heating_off_time: 60s
     min_heating_run_time: 3s
     min_idle_time: 240s
     heat_action:
-      - switch.turn_on: virtual_heater
+      - if:
+          condition:
+            lambda: 'return id(startup_test_complete) && !id(high_temp_alarm);'
+          then:
+            - switch.turn_on: virtual_heater
     idle_action:
       - switch.turn_off: virtual_heater
     visual: 
       max_temperature: 40.6
       min_temperature: 5
-
-
