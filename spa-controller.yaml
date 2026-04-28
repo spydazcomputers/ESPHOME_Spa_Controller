@@ -123,7 +123,6 @@ output:
         open_drain: true
     id: r_Heater
     inverted: false
-    name: Heater
 
 switch:
   # Pin 10 — Pump one low speed
