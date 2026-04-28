@@ -73,6 +73,16 @@ globals:
     type: bool
     restore_value: yes
     initial_value: 'true'
+  
+  - id: filter_interval_minutes
+    type: uint32_t
+    restore_value: yes
+    initial_value: '240'
+  
+  - id: filter_runtime_minutes
+    type: uint32_t
+    restore_value: yes
+    initial_value: '60'
 
 #Apollo 11 Spa Controller Pinout
 # Pin 1 — 3.3V +
@@ -300,23 +310,29 @@ binary_sensor:
 number:
   - platform: template
     name: "Filter Cycle Interval (minutes)"
-    id: filter_interval_minutes
+    id: filter_interval_number
     min_value: 60
     max_value: 1440
     step: 10
-    restore_value: yes
-    initial_value: 240
     unit_of_measurement: "min"
+    set_action:
+      - globals.set:
+          id: filter_interval_minutes
+          value: !lambda 'return (uint32_t)x;'
+    lambda: 'return (float)id(filter_interval_minutes);'
   
   - platform: template
     name: "Filter Cycle Runtime (minutes)"
-    id: filter_runtime_minutes
+    id: filter_runtime_number
     min_value: 1
     max_value: 120
     step: 1
-    restore_value: yes
-    initial_value: 60
     unit_of_measurement: "min"
+    set_action:
+      - globals.set:
+          id: filter_runtime_minutes
+          value: !lambda 'return (uint32_t)x;'
+    lambda: 'return (float)id(filter_runtime_minutes);'
 
 script:
   # Startup test sequence - validates all heater safety relays and thermostats
@@ -544,14 +560,14 @@ script:
           then:
             - if:
                 condition:
-                  lambda: 'return (millis() - id(filter_last_run_time)) > (id(filter_interval_minutes).state * 60 * 1000);'
+                  lambda: 'return (millis() - id(filter_last_run_time)) > (id(filter_interval_minutes) * 60 * 1000);'
                 then:
                   - logger.log: "Starting filter cycle"
                   - globals.set:
                       id: filter_last_run_time
                       value: !lambda 'return millis();'
                   - switch.turn_on: r_P2_high
-                  - delay: !lambda 'return id(filter_runtime_minutes).state * 60 * 1000;'
+                  - delay: !lambda 'return id(filter_runtime_minutes) * 60 * 1000;'
                   - switch.turn_off: r_P2_high
                   - logger.log: "Filter cycle complete"
 
