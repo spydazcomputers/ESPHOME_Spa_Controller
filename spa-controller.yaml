@@ -544,7 +544,6 @@ switch:
 
   ## Virtual heater — the ONLY safe way to turn the heater on.
   - platform: template
-    name: "Virtual Heater"
     id: virtual_heater
     optimistic: true
     turn_on_action:
