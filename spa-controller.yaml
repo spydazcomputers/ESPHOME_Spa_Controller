@@ -335,52 +335,24 @@ esphome:
     then:
       - script.execute: startup_test_sequence
 
-
-## ═══════════════════════════════════════════════════════════════════════════
-## ESP32 BOARD — hardware target
-## ═══════════════════════════════════════════════════════════════════════════
-
 esp32:
   board: upesy_wroom
   framework:
     type: esp-idf
 
-
-## ═══════════════════════════════════════════════════════════════════════════
-## LOGGING — serial and wireless debug output
-## ═══════════════════════════════════════════════════════════════════════════
-
 logger:
-
-
-## ═══════════════════════════════════════════════════════════════════════════
-## HOME ASSISTANT API — encrypted native API connection
-## ═══════════════════════════════════════════════════════════════════════════
 
 api:
   encryption:
     key: "meYMpUo1HqkpkR27l0lvgatyVElKyqNFeNGdFiFmaNI="
 
-
-## ═══════════════════════════════════════════════════════════════════════════
-## OTA — over-the-air firmware updates
-## ═══════════════════════════════════════════════════════════════════════════
-
 ota:
   - platform: esphome
     password: "a3e355c58dd9f84465293ebdcc2b0e32"
 
-
-## ═══════════════════════════════════════════════════════════════════════════
-## WIFI — network connectivity with fallback AP
-## ═══════════════════════════════════════════════════════════════════════════
-
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
-
-  ## If the configured WiFi network is unreachable, spin up a captive-portal
-  ## hotspot so the device can still be configured/debugged.
   ap:
     ssid: "Spa-Controller Fallback Hotspot"
     password: "ZhJIBrjT85cJ"
@@ -525,8 +497,9 @@ output:
 ## ═══════════════════════════════════════════════════════════════════════════
 ## Pump switches (P1 Low, P1 High, P2 High) are internal: true — they are
 ## NOT directly visible in Home Assistant. Users control pumps via HA
-## buttons (see BUTTONS section) which start timed scripts with an auto-off
-## countdown. This prevents a pump from being accidentally left on forever.
+## buttons (see BUTTONS section) which act as toggles with an auto-off
+## safety countdown. This prevents a pump from being accidentally left
+## on forever.
 ##
 ## The thermostat (virtual_heater), filter cycle, and startup test scripts
 ## call these switches directly — they are NOT subject to the auto-off
@@ -692,8 +665,7 @@ sensor:
   ## actual spa body water temperature for thermostat control.
   ## NOTE: This sensor uses a 10.0 kOhm pull-down reference resistor
   ## with UPSTREAM NTC configuration, unlike the OEM inlet/outlet
-  ## which use 9.0 kOhm DOWNSTREAM. The resistor value must match
-  ## what is physically on the board for accurate readings.
+  ## which use 9.0 kOhm DOWNSTREAM.
   - platform: adc
     id: spa_sensor
     pin: GPIO39
@@ -786,12 +758,11 @@ binary_sensor:
 ## ═══════════════════════════════════════════════════════════════════════════
 ## BUTTONS — manual control actions exposed to Home Assistant
 ## ═══════════════════════════════════════════════════════════════════════════
-## Pump buttons start the pump and engage the auto-off timer via a
-## mode: restart script. Pressing the button again while the pump is
-## running RESTARTS the timer countdown. The auto-off duration is set
-## by the "Pump Auto-Off Timer" number input.
+## Pump buttons act as TOGGLES: press once to turn on (starts auto-off
+## countdown), press again to turn off immediately. The auto-off timer
+## duration is set by the "Pump Auto-Off Timer" number input.
 ##
-## Each pump auto-off script has safety guards at the turn-off point:
+## Safety guards at every turn-off point (both toggle-off and auto-off):
 ##   P1 Low:  Won't turn off if virtual heater is active (needs flow)
 ##   P1 High: Restores P1 Low if virtual heater was running (interlock
 ##            killed Low when High started — restore it when jets end)
@@ -799,28 +770,24 @@ binary_sensor:
 
 button:
 
-  ## ── Pump Control Buttons (with auto-off timer) ───────────────────────
+  ## ── Pump Control Buttons (toggle + auto-off timer) ───────────────────
 
-  ## Starts Pump 1 Low with auto-off timer. If the thermostat (virtual
-  ## heater) is actively heating when the timer fires, the pump is NOT
-  ## turned off — the heater needs flow.
+  ## Toggles Pump 1 Low. If off → on + auto-off timer. If on → off.
+  ## Guard: won't turn off if virtual heater is active (needs flow).
   - platform: template
     name: "Pump 1 Low"
     on_press:
       - script.execute: manual_p1_low
 
-  ## Starts Pump 1 High (jets) with auto-off timer. Due to the interlock,
-  ## this will turn off Pump 1 Low if it's running. When the timer fires,
-  ## if the virtual heater is on, Pump 1 Low is automatically restored
-  ## to maintain heater flow.
+  ## Toggles Pump 1 High (jets). If off → on + auto-off timer. If on → off.
+  ## Guard: restores P1 Low if virtual heater was running.
   - platform: template
     name: "Pump 1 High (Jets)"
     on_press:
       - script.execute: manual_p1_high
 
-  ## Starts Pump 2 High with auto-off timer. If a filter cycle is
-  ## running when the timer fires, the pump is NOT turned off — the
-  ## filter cycle manages its own shutdown.
+  ## Toggles Pump 2 High. If off → on + auto-off timer. If on → off.
+  ## Guard: won't turn off if filter cycle is running.
   - platform: template
     name: "Pump 2 High"
     on_press:
@@ -874,36 +841,27 @@ text_sensor:
     name: "Filter Cycle Remaining"
     update_interval: 30s
     lambda: |-
-      if (!id(filter_running)) {
-        return {"00:00"};
-      }
+      if (!id(filter_running)) { return {"00:00"}; }
       uint32_t now = millis();
       uint32_t started = id(filter_last_run_time);
       uint32_t total_ms = id(filter_runtime_minutes) * 60000U;
       uint32_t elapsed = now - started;
-      if (elapsed >= total_ms) {
-        return {"00:00"};
-      }
+      if (elapsed >= total_ms) { return {"00:00"}; }
       uint32_t remain_ms = total_ms - elapsed;
       uint32_t remain_min = remain_ms / 60000U;
       char buf[6];
       snprintf(buf, sizeof(buf), "%02d:%02d", (int)(remain_min / 60), (int)(remain_min % 60));
       return {buf};
 
-  ## Shows time until the next automatic filter cycle starts, or 00:00
-  ## if filtering is disabled or overdue.
+  ## Shows time until the next automatic filter cycle starts.
   - platform: template
     name: "Next Filter Cycle"
     update_interval: 30s
     lambda: |-
-      if (!id(filter_cycle_enabled)) {
-        return {"00:00"};
-      }
+      if (!id(filter_cycle_enabled)) { return {"00:00"}; }
       uint32_t now = millis();
       uint32_t next_start = id(filter_last_run_time) + id(filter_interval_minutes) * 60000U;
-      if (now >= next_start) {
-        return {"00:00"};
-      }
+      if (now >= next_start) { return {"00:00"}; }
       uint32_t remain_ms = next_start - now;
       uint32_t remain_min = remain_ms / 60000U;
       char buf[6];
@@ -1003,24 +961,58 @@ number:
 script:
 
   ###########################################################################
-  ## MANUAL PUMP SCRIPTS — auto-off timer for HA button activations
+  ## MANUAL PUMP SCRIPTS — toggle on/off with auto-off safety timer
   ##
-  ## All three scripts use mode: restart — pressing the HA button again
-  ## while the pump is already running resets the auto-off countdown.
-  ## Each script has safety guards at the turn-off point to avoid
-  ## interfering with thermostat or filter cycle operations.
+  ## Each pump has TWO scripts:
+  ##   manual_pX       — TOGGLE logic. Checks pump state:
+  ##                      OFF → turn on + start timer script
+  ##                      ON  → turn off immediately + stop timer script
+  ##   manual_pX_timer — AUTO-OFF countdown. Uses mode: restart so that
+  ##                      if the pump is toggled off and back on, the
+  ##                      timer resets cleanly.
+  ##
+  ## This separation keeps the toggle instant (no delay blocking) and the
+  ## timer independently restartable.
+  ##
+  ## Safety guards at every turn-off point (both toggle-off and auto-off):
+  ##   P1 Low:  Won't turn off if virtual heater is active (needs flow)
+  ##   P1 High: Restores P1 Low if virtual heater was running (interlock
+  ##            killed Low when High started — restore it when jets end)
+  ##   P2 High: Won't turn off if a filter cycle is running
   ###########################################################################
 
-  ## ── Pump 1 Low (manual with auto-off) ─────────────────────────────────
+  ## ── Pump 1 Low (toggle + auto-off) ────────────────────────────────────
+  ## Toggle: if off → turn on + start timer. If on → turn off immediately.
   ## Guard at turn-off: if virtual_heater is on, the heater needs P1 Low
   ## for flow — do NOT turn it off. The thermostat will manage shutdown.
   - id: manual_p1_low
+    then:
+      - if:
+          condition:
+            lambda: 'return id(r_P1_low).state;'
+          then:
+            ## Pump is ON — turn it off (with heater guard)
+            - if:
+                condition:
+                  lambda: 'return !id(virtual_heater).state;'
+                then:
+                  - script.stop: manual_p1_low_timer
+                  - switch.turn_off: r_P1_low
+                  - logger.log: "Manual Pump 1 Low OFF — user toggled off."
+                else:
+                  - logger.log: "Manual Pump 1 Low OFF BLOCKED — virtual heater is active."
+          else:
+            ## Pump is OFF — turn it on + start auto-off timer
+            - logger.log:
+                format: "Manual Pump 1 Low ON — auto-off in %u minutes"
+                args: ['id(pump_auto_off_minutes)']
+            - switch.turn_on: r_P1_low
+            - script.execute: manual_p1_low_timer
+
+  ## Auto-off timer for Pump 1 Low. mode: restart so re-toggling resets it.
+  - id: manual_p1_low_timer
     mode: restart
     then:
-      - logger.log:
-          format: "Manual Pump 1 Low ON — auto-off in %u minutes"
-          args: ['id(pump_auto_off_minutes)']
-      - switch.turn_on: r_P1_low
       - delay: !lambda 'return id(pump_auto_off_minutes) * 60000U;'
       - if:
           condition:
@@ -1031,23 +1023,45 @@ script:
           else:
             - logger.log: "Manual Pump 1 Low auto-off SKIPPED — virtual heater is active."
 
-  ## ── Pump 1 High / Jets (manual with auto-off) ────────────────────────
+  ## ── Pump 1 High / Jets (toggle + auto-off) ────────────────────────────
+  ## Toggle: if off → turn on + start timer. If on → turn off immediately.
   ## The GPIO interlock automatically turns off P1 Low when P1 High starts.
   ## Guard at turn-off: if the virtual heater is on, the interlock killed
-  ## P1 Low when jets started — restore P1 Low to maintain heater flow
-  ## now that jets are shutting off.
+  ## P1 Low when jets started — restore P1 Low to maintain heater flow.
   - id: manual_p1_high
+    then:
+      - if:
+          condition:
+            lambda: 'return id(r_P1_high).state;'
+          then:
+            ## Jets are ON — turn them off
+            - script.stop: manual_p1_high_timer
+            - switch.turn_off: r_P1_high
+            - logger.log: "Manual Pump 1 High OFF — user toggled off."
+            ## If the heater was running, the interlock killed P1 Low when
+            ## jets started. Restore P1 Low to maintain heater flow.
+            - if:
+                condition:
+                  lambda: 'return id(virtual_heater).state;'
+                then:
+                  - switch.turn_on: r_P1_low
+                  - logger.log: "Restored Pump 1 Low — virtual heater is active."
+          else:
+            ## Jets are OFF — turn them on + start auto-off timer
+            - logger.log:
+                format: "Manual Pump 1 High (Jets) ON — auto-off in %u minutes"
+                args: ['id(pump_auto_off_minutes)']
+            - switch.turn_on: r_P1_high
+            - script.execute: manual_p1_high_timer
+
+  ## Auto-off timer for Pump 1 High. mode: restart so re-toggling resets it.
+  - id: manual_p1_high_timer
     mode: restart
     then:
-      - logger.log:
-          format: "Manual Pump 1 High (Jets) ON — auto-off in %u minutes"
-          args: ['id(pump_auto_off_minutes)']
-      - switch.turn_on: r_P1_high
       - delay: !lambda 'return id(pump_auto_off_minutes) * 60000U;'
       - switch.turn_off: r_P1_high
       - logger.log: "Manual Pump 1 High auto-off — timer expired."
-      ## If the heater was running, the interlock killed P1 Low when we
-      ## started P1 High. Now that jets are off, restore P1 Low for flow.
+      ## If the heater was running, restore P1 Low for flow.
       - if:
           condition:
             lambda: 'return id(virtual_heater).state;'
@@ -1055,16 +1069,38 @@ script:
             - switch.turn_on: r_P1_low
             - logger.log: "Restored Pump 1 Low — virtual heater is active."
 
-  ## ── Pump 2 High (manual with auto-off) ────────────────────────────────
+  ## ── Pump 2 High (toggle + auto-off) ───────────────────────────────────
+  ## Toggle: if off → turn on + start timer. If on → turn off immediately.
   ## Guard at turn-off: if a filter cycle is running, the filter script
   ## manages its own shutdown — do NOT turn off P2 High.
   - id: manual_p2_high
+    then:
+      - if:
+          condition:
+            lambda: 'return id(r_P2_high).state;'
+          then:
+            ## Pump is ON — turn it off (with filter guard)
+            - if:
+                condition:
+                  lambda: 'return !id(filter_running);'
+                then:
+                  - script.stop: manual_p2_high_timer
+                  - switch.turn_off: r_P2_high
+                  - logger.log: "Manual Pump 2 High OFF — user toggled off."
+                else:
+                  - logger.log: "Manual Pump 2 High OFF BLOCKED — filter cycle is active."
+          else:
+            ## Pump is OFF — turn it on + start auto-off timer
+            - logger.log:
+                format: "Manual Pump 2 High ON — auto-off in %u minutes"
+                args: ['id(pump_auto_off_minutes)']
+            - switch.turn_on: r_P2_high
+            - script.execute: manual_p2_high_timer
+
+  ## Auto-off timer for Pump 2 High. mode: restart so re-toggling resets it.
+  - id: manual_p2_high_timer
     mode: restart
     then:
-      - logger.log:
-          format: "Manual Pump 2 High ON — auto-off in %u minutes"
-          args: ['id(pump_auto_off_minutes)']
-      - switch.turn_on: r_P2_high
       - delay: !lambda 'return id(pump_auto_off_minutes) * 60000U;'
       - if:
           condition:
@@ -1107,9 +1143,6 @@ script:
 
   ###########################################################################
   ## STARTUP TEST SEQUENCE — main entry point (called on_boot)
-  ##
-  ## Validates sensors, then hands off to the static heater test which
-  ## verifies the heater relay, both hi-limit cutouts, and water flow.
   ###########################################################################
   - id: startup_test_sequence
     then:
@@ -1122,9 +1155,7 @@ script:
       - globals.set:
           id: boot_failed
           value: 'false'
-
-      ## Ensure every output is OFF before we begin — we need stagnant
-      ## water in the heater manifold.
+      ## Ensure every output is OFF — we need stagnant water in the manifold.
       - output.turn_off: r_Heater
       - output.turn_off: r_HiLim_1
       - output.turn_off: r_HiLim_2
@@ -1132,13 +1163,9 @@ script:
       - switch.turn_off: r_P1_high
       - switch.turn_off: r_Circ
       - switch.turn_off: r_P2_high
-
       - logger.log: "All outputs OFF. Waiting for sensors to stabilize..."
       - delay: 3s
-
-      ## Prime the sensor filter chains with several manual reads.
-      ## The median filter (window 5) and EMA (alpha 0.15) need data
-      ## before they produce meaningful output.
+      ## Prime sensor filter chains (median window 5 + EMA alpha 0.15)
       - component.update: outlet_sensor
       - component.update: inlet_sensor
       - component.update: spa_sensor
@@ -1159,8 +1186,7 @@ script:
       - component.update: inlet_sensor
       - component.update: spa_sensor
       - delay: 1s
-
-      ## Validate sensors are returning sane values
+      ## Validate sensors
       - if:
           condition:
             and:
@@ -1179,7 +1205,6 @@ script:
             - logger.log:
                 format: "Heater pulse duration: %u ms"
                 args: ['id(heater_pulse_ms)']
-            - logger.log: "Proceeding to startup test..."
             - script.execute: static_heater_test
           else:
             - logger.log: "ERROR: Temperature sensors out of range or NaN. Aborting."
@@ -1189,37 +1214,16 @@ script:
   ###########################################################################
   ## STARTUP TEST — static heater + pump-flush hi-limit break verification
   ##
-  ## All pumps remain OFF for Steps 1-3. The water trapped in the heater
-  ## manifold is stagnant, so even a short heater pulse produces a large,
-  ## easily-detected temperature rise on the OEM outlet NTC sensor (which
-  ## is physically attached to the heater element inside the relay box).
-  ##
-  ## After Step 3 proves the heater relay works, the heater relay STAYS ON
-  ## for Steps 4-5. Each hi-limit is opened individually, then Pump 1 High
-  ## flushes cool spa water through the manifold (15s), clearing all
-  ## residual heat. After the pump stops the water is stagnant and cool.
-  ## With the heater relay still energised, if the hi-limit ISN'T actually
-  ## breaking the circuit, the stagnant water will heat up immediately —
-  ## an unmistakable, definitive failure signal with zero thermal-lag
-  ## ambiguity.
-  ##
-  ## The pump flushes also implicitly verify water flow — if the pump
-  ## wasn't moving water, the manifold wouldn't cool down.
-  ##
   ## Step 1: Hi-Limit 1 ON only            -> NO heat (circuit incomplete)
   ## Step 2: Both Hi-Limits ON, Heater OFF  -> NO heat (heater relay open)
   ## Step 3: Full circuit, Heater ON (pulse)-> RISE expected
   ##         Heater relay STAYS ON.
   ## Step 4: Open HL1, Pump flush 15s, pump off -> NO rise (HL1 breaks it)
   ## Step 5: Close HL1, Open HL2, Pump flush 15s, pump off -> NO rise
-  ##
-  ## Safety: 50 C hard abort on outlet at every check point.
-  ## Rise threshold: 0.5 C minimum for heater-on steps.
   ###########################################################################
   - id: static_heater_test
     then:
       - logger.log: "=== STARTUP TEST BEGIN ==="
-
       ## ── Record stagnant baseline ──────────────────────────────────────
       - component.update: outlet_sensor
       - component.update: inlet_sensor
@@ -1234,7 +1238,7 @@ script:
           format: "Stagnant baseline — Inlet: %.2f°C  Outlet: %.2f°C"
           args: ['id(heater_temp_baseline_inlet)', 'id(heater_temp_baseline_outlet)']
 
-      ## ── STEP 1: Hi-Limit 1 ON only — incomplete circuit, NO heat ─────
+      ## ── STEP 1: Hi-Limit 1 ON only — NO heat ─────────────────────────
       - if:
           condition:
             lambda: 'return !id(boot_failed);'
@@ -1284,7 +1288,7 @@ script:
               return !id(boot_failed) &&
               fabs(id(outlet_temp).state - id(heater_temp_baseline_outlet)) > id(temp_deadband);
           then:
-            - logger.log: "FAIL Step 2: Unexpected temp change with Hi-Limits only (no heater)."
+            - logger.log: "FAIL Step 2: Unexpected temp change with Hi-Limits only."
             - script.execute: startup_test_abort
       - if:
           condition:
@@ -1293,11 +1297,8 @@ script:
             - logger.log: "  Step 2 PASSED"
 
       ## ── STEP 3: FULL CIRCUIT — heater ON, RISE expected ───────────────
-      ##    Both hi-limits are already ON from Steps 1-2.
-      ##    Heater turns on, runs for heater_pulse_ms, then we check for
-      ##    rise. HEATER STAYS ON — it is not turned off after the pulse.
-      ##    "Check once, retry once" — if first window doesn't show enough
-      ##    rise, the same delay + reads are repeated once more.
+      ##    "Check once, retry once" for thermal lag.
+      ##    HEATER STAYS ON after this step.
       - if:
           condition:
             lambda: 'return !id(boot_failed);'
@@ -1305,15 +1306,13 @@ script:
             - logger.log:
                 format: "Step 3: HEATER ON — %u ms into stagnant water. RISE EXPECTED."
                 args: ['id(heater_pulse_ms)']
-            ## Snapshot baseline right before heater on
             - globals.set:
                 id: heater_temp_baseline_outlet
                 value: !lambda 'return id(outlet_temp).state;'
             - output.turn_on: r_Heater
             - delay: !lambda 'return std::min(id(heater_pulse_ms), (uint32_t)6000);'
-            ## NOTE: Heater stays ON — do NOT turn it off here.
             - logger.log: "  Pulse complete. Heater remains ON. Reading outlet..."
-            ## ── First read window (~8s from heater on) ──────────────────
+            ## ── First read window ───────────────────────────────────────
             - delay: 3s
             - component.update: outlet_sensor
             - delay: 1s
@@ -1328,22 +1327,18 @@ script:
             - logger.log:
                 format: "  Step 3 window 1 — Outlet: %.2f°C (baseline: %.2f°C, delta: +%.2f°C)"
                 args: ['id(outlet_temp).state', 'id(heater_temp_baseline_outlet)', 'id(outlet_temp).state - id(heater_temp_baseline_outlet)']
-      ## Safety abort
       - if:
           condition:
             lambda: 'return !id(boot_failed) && id(outlet_temp).state > 50.0;'
           then:
             - logger.log: "SAFETY ABORT: Outlet exceeded 50°C!"
             - script.execute: startup_test_abort
-      ## Check rise — first attempt
       - if:
           condition:
             lambda: |-
               return !id(boot_failed) &&
               (id(outlet_temp).state - id(heater_temp_baseline_outlet)) < 0.5;
           then:
-            ## Rise not detected yet — thermal lag hasn't reached sensor.
-            ## Retry: same delay + reads one more time.
             - logger.log: "  Rise not yet detected — retrying with second read window..."
             - delay: 3s
             - component.update: outlet_sensor
@@ -1359,21 +1354,19 @@ script:
             - logger.log:
                 format: "  Step 3 window 2 — Outlet: %.2f°C (baseline: %.2f°C, delta: +%.2f°C)"
                 args: ['id(outlet_temp).state', 'id(heater_temp_baseline_outlet)', 'id(outlet_temp).state - id(heater_temp_baseline_outlet)']
-            ## Safety check again
             - if:
                 condition:
                   lambda: 'return !id(boot_failed) && id(outlet_temp).state > 50.0;'
                 then:
                   - logger.log: "SAFETY ABORT: Outlet exceeded 50°C during retry!"
                   - script.execute: startup_test_abort
-            ## Final rise check
             - if:
                 condition:
                   lambda: |-
                     return !id(boot_failed) &&
                     (id(outlet_temp).state - id(heater_temp_baseline_outlet)) < 0.5;
                 then:
-                  - logger.log: "FAIL Step 3: No temperature rise after two windows — heater not firing."
+                  - logger.log: "FAIL Step 3: No temperature rise — heater not firing."
                   - script.execute: startup_test_abort
       - if:
           condition:
@@ -1383,13 +1376,6 @@ script:
             - logger.log: "  Heater relay remains ON for hi-limit break tests."
 
       ## ── STEP 4: HI-LIMIT 1 BREAK TEST ────────────────────────────────
-      ##    Heater relay is still ON from Step 3.
-      ##    Open Hi-Limit 1 — circuit should break (no current to element).
-      ##    Pump 1 High flushes cool spa water through the manifold for
-      ##    15 seconds, clearing all residual heat from Step 3. After the
-      ##    pump stops, the water is stagnant and cool. If Hi-Limit 1 is
-      ##    actually breaking the circuit, the temp should NOT rise even
-      ##    though the heater relay is still energised.
       - if:
           condition:
             lambda: 'return !id(boot_failed);'
@@ -1397,26 +1383,22 @@ script:
             - logger.log: "Step 4: Hi-Limit 1 OPEN. Heater relay still ON. Pump flush 15s."
             - output.turn_off: r_HiLim_1
             - delay: 500ms
-            ## Flush heated manifold water with cool spa water
             - switch.turn_on: r_P1_high
             - logger.log: "  Pump 1 High ON — flushing manifold..."
             - delay: 15s
             - switch.turn_off: r_P1_high
             - logger.log: "  Pump OFF. Water stagnant. Heater relay ON, HL1 open."
-            ## Let flow settle, then prime sensor reads
             - delay: 5s
             - component.update: outlet_sensor
             - delay: 1s
             - component.update: outlet_sensor
             - delay: 1s
-            ## Record post-flush baseline — should be near ambient/spa temp
             - globals.set:
                 id: heater_temp_baseline_outlet
                 value: !lambda 'return id(outlet_temp).state;'
             - logger.log:
                 format: "  Step 4 post-flush baseline — Outlet: %.2f°C"
                 args: ['id(heater_temp_baseline_outlet)']
-            ## Wait 10s — if HL1 failed, stagnant water heats up fast
             - delay: 10s
             - component.update: outlet_sensor
             - delay: 1s
@@ -1431,7 +1413,7 @@ script:
               return !id(boot_failed) &&
               (id(outlet_temp).state - id(heater_temp_baseline_outlet)) > id(temp_deadband);
           then:
-            - logger.log: "FAIL Step 4: Temp rose with Hi-Limit 1 OPEN — relay NOT breaking circuit!"
+            - logger.log: "FAIL Step 4: Temp rose with HL1 OPEN — relay NOT breaking circuit!"
             - script.execute: startup_test_abort
       - if:
           condition:
@@ -1440,41 +1422,32 @@ script:
             - logger.log: "  Step 4 PASSED — Hi-Limit 1 confirmed breaking heater circuit."
 
       ## ── STEP 5: HI-LIMIT 2 BREAK TEST ────────────────────────────────
-      ##    Heater relay is still ON.
-      ##    Swap hi-limits: open HL2 FIRST (circuit stays broken via HL1
-      ##    which is still open), THEN close HL1. At no point are both
-      ##    hi-limits closed while the heater relay is on.
-      ##    Same pump flush + stagnant check as Step 4.
+      ##    Safe swap: open HL2 first (HL1 still open), then close HL1.
       - if:
           condition:
             lambda: 'return !id(boot_failed);'
           then:
-            - logger.log: "Step 5: Hi-Limit 2 OPEN, Hi-Limit 1 CLOSE. Heater relay still ON. Pump flush 15s."
-            ## Safe transition — open HL2 first (HL1 still open), then close HL1
+            - logger.log: "Step 5: Hi-Limit 2 OPEN, Hi-Limit 1 CLOSE. Heater still ON. Pump flush 15s."
             - output.turn_off: r_HiLim_2
             - delay: 200ms
             - output.turn_on: r_HiLim_1
             - delay: 500ms
-            ## Flush manifold again
             - switch.turn_on: r_P1_high
             - logger.log: "  Pump 1 High ON — flushing manifold..."
             - delay: 15s
             - switch.turn_off: r_P1_high
             - logger.log: "  Pump OFF. Water stagnant. Heater relay ON, HL2 open."
-            ## Let flow settle, then prime sensor reads
             - delay: 5s
             - component.update: outlet_sensor
             - delay: 1s
             - component.update: outlet_sensor
             - delay: 1s
-            ## Record post-flush baseline
             - globals.set:
                 id: heater_temp_baseline_outlet
                 value: !lambda 'return id(outlet_temp).state;'
             - logger.log:
                 format: "  Step 5 post-flush baseline — Outlet: %.2f°C"
                 args: ['id(heater_temp_baseline_outlet)']
-            ## Wait 10s — if HL2 failed, stagnant water heats up fast
             - delay: 10s
             - component.update: outlet_sensor
             - delay: 1s
@@ -1489,7 +1462,7 @@ script:
               return !id(boot_failed) &&
               (id(outlet_temp).state - id(heater_temp_baseline_outlet)) > id(temp_deadband);
           then:
-            - logger.log: "FAIL Step 5: Temp rose with Hi-Limit 2 OPEN — relay NOT breaking circuit!"
+            - logger.log: "FAIL Step 5: Temp rose with HL2 OPEN — relay NOT breaking circuit!"
             - script.execute: startup_test_abort
       - if:
           condition:
@@ -1523,7 +1496,6 @@ script:
             - globals.set:
                 id: boot_testing_active
                 value: 'false'
-            ## Start the circulator pump now that we know everything works
             - switch.turn_on: r_Circ
             - homeassistant.service:
                 service: persistent_notification.create
@@ -1534,10 +1506,7 @@ script:
 
   ###########################################################################
   ## HIGH TEMPERATURE ALARM — runtime safety cutoff
-  ## NOTE: Pumps STAY RUNNING during a high-temp alarm to maintain water
-  ## circulation and aid cool-down. Only the heater circuit is killed.
-  ## The virtual heater state is updated via publish_state() to avoid
-  ## triggering turn_off_action (which would kill the pump).
+  ## Pumps STAY RUNNING during alarm for circulation cooling.
   ###########################################################################
   - id: check_high_temp_alarm
     then:
@@ -1559,7 +1528,7 @@ script:
                   lambda: 'return !id(high_temp_alarm);'
                 then:
                   - logger.log:
-                      format: "CRITICAL: High temperature alarm! Inlet: %.1f°C, Outlet: %.1f°C, Spa: %.1f°C"
+                      format: "CRITICAL: High temp alarm! Inlet: %.1f°C, Outlet: %.1f°C, Spa: %.1f°C"
                       args: ['id(inlet_temp).state', 'id(outlet_temp).state', 'id(spa_temp).state']
                   - globals.set:
                       id: high_temp_alarm
@@ -1567,11 +1536,9 @@ script:
                   - globals.set:
                       id: hi_limit_triggered
                       value: 'true'
-                  # Kill the heater circuit only — pumps stay running
                   - output.turn_off: r_Heater
                   - output.turn_off: r_HiLim_1
                   - output.turn_off: r_HiLim_2
-                  # Update virtual heater state without triggering turn_off_action
                   - lambda: 'id(virtual_heater).publish_state(false);'
                   - homeassistant.service:
                       service: persistent_notification.create
@@ -1591,8 +1558,6 @@ script:
 
   ###########################################################################
   ## FILTER CYCLE — automatic periodic water filtration
-  ## Sets filter_running flag to prevent overlapping cycles and to drive
-  ## the filter timer text sensors.
   ###########################################################################
   - id: filter_cycle_loop
     then:
@@ -1621,11 +1586,8 @@ script:
                       value: 'false'
                   - logger.log: "Automatic filter cycle complete"
 
-
   ###########################################################################
   ## MANUAL FILTER CYCLE — triggered by the "Run Filter Cycle" button
-  ## Uses the same filter_running flag and filter_last_run_time so the
-  ## timer text sensors work identically for manual and automatic cycles.
   ###########################################################################
   - id: manual_filter_cycle
     then:
@@ -1656,7 +1618,6 @@ script:
 ## ═══════════════════════════════════════════════════════════════════════════
 
 interval:
-
   ## Normal sensor polling — only active AFTER boot test completes
   - interval: 5s
     then:
@@ -1693,7 +1654,6 @@ climate:
     heat_action:
       - if:
           condition:
-            ## Triple safety gate — all must be true to heat
             lambda: 'return id(startup_test_complete) && !id(high_temp_alarm) && !id(boot_failed);'
           then:
             - switch.turn_on: virtual_heater
@@ -1702,4 +1662,3 @@ climate:
     visual:
       max_temperature: 40.6
       min_temperature: 5
-      temperature_step: .5556
