@@ -1495,3 +1495,6 @@ climate:
     visual:
       max_temperature: 40.6
       min_temperature: 5
+    heat_deadband: 0.75
+    heat_overshoot: 0.1
+    
