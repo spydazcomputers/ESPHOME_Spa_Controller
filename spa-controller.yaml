@@ -72,14 +72,18 @@
 ##
 ## TEMPERATURE SENSORS
 ## ───────────────────
-##   Three 10 kOhm NTC thermistors wired through the DB15 connector in
-##   voltage-divider configurations:
+##   Three 10 kOhm NTC thermistors in voltage-divider configurations.
+##   The inlet and outlet sensors are OEM — built into the Apollo 11
+##   relay box and physically attached to the heater manifold. Their
+##   signals are carried through the DB15 connector. The spa body sensor
+##   is external, added as part of this project to measure the actual
+##   spa water temperature for thermostat control.
 ##
-##   Sensor   │ GPIO │ Config     │ Ref Resistor │ Location
-##   ─────────┼──────┼────────────┼──────────────┼──────────────────────
-##   Inlet    │ 34   │ DOWNSTREAM │ 9.0 kOhm    │ Heater manifold inlet
-##   Outlet   │ 35   │ DOWNSTREAM │ 9.0 kOhm    │ Heater manifold outlet
-##   Spa      │ 39   │ UPSTREAM   │ 10.0 kOhm   │ Spa body water
+##   Sensor   │ GPIO │ Config     │ Ref Resistor │ Location          │ Origin
+##   ─────────┼──────┼────────────┼──────────────┼───────────────────┼────────
+##   Inlet    │ 34   │ DOWNSTREAM │ 9.0 kOhm    │ Heater manifold   │ OEM
+##   Outlet   │ 35   │ DOWNSTREAM │ 9.0 kOhm    │ Heater manifold   │ OEM
+##   Spa      │ 39   │ UPSTREAM   │ 10.0 kOhm   │ Spa body water    │ Added
 ##
 ##   ADC pins (GPIO34, 35, 39) are input-only on the ESP32 and have no
 ##   internal pull-up capability.
@@ -144,7 +148,9 @@
 ##   cutouts, and water flow on every boot before the system is allowed
 ##   to heat. The test exploits the fact that stagnant water in the heater
 ##   manifold heats up rapidly with even a short heater pulse, producing
-##   large, easily-detected temperature rises on the outlet NTC.
+##   large, easily-detected temperature rises on the OEM outlet NTC
+##   (which is physically attached to the heater element inside the
+##   relay box).
 ##
 ##   The ADC/NTC sensor chain lacks the resolution to detect inlet-to-
 ##   outlet temperature deltas with water flowing — the signal is too
@@ -218,7 +224,8 @@
 ## THERMOSTAT
 ## ──────────
 ##   ESPHome thermostat climate entity ("Spa Temp Controller") using the
-##   calibrated spa_temp sensor. Calls virtual_heater on/off.
+##   calibrated spa_temp sensor (external, added by this project). Calls
+##   virtual_heater on/off.
 ##   Triple safety gate: startup_test_complete && !high_temp_alarm && !boot_failed
 ##   Timing: min_heating_off 60s, min_heating_run 3s, min_idle 240s.
 ##   Range: 5°C – 40.6°C.
@@ -257,9 +264,9 @@
 ##   Virtual Heater      — Safe heater on/off abstraction
 ##
 ## SENSORS
-##   Inlet Temperature   — Heater manifold inlet (°C)
-##   Outlet Temperature  — Heater manifold outlet (°C)
-##   Spa Temperature Raw — Uncorrected spa body NTC reading (°C)
+##   Inlet Temperature   — OEM heater manifold inlet (°C)
+##   Outlet Temperature  — OEM heater manifold outlet (°C)
+##   Spa Temperature Raw — Uncorrected external spa body NTC reading (°C)
 ##   Spa Temperature     — Corrected spa reading (raw + offset) (°C)
 ##   Inlet/Outlet Voltage & Resistance — raw ADC chain (debug)
 ##
@@ -311,7 +318,6 @@
 ##   filter_running           │ bool    │ no      │ Cycle in progress
 ##
 ###############################################################################
-
 
 ## ═══════════════════════════════════════════════════════════════════════════
 ## ESPHOME CORE — device identity and boot behaviour

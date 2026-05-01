@@ -2,7 +2,7 @@
 
 **Replaces the dead OEM controller/HMI on an Apollo 11 spa pack with an ESP32 running ESPHome, using a Home Assistant dashboard as the user interface.**
 
-The Apollo 11 spa pack's original HMI/controller board is dead. The relay box and all power-stage hardware are still fully functional. This project plugs an ESP32 into the relay box's DB15 port via a terminal adapter, replacing the OEM interface entirely. A Home Assistant dashboard provides thermostat control, pump management, filter scheduling, and real-time temperature monitoring.
+The Apollo 11 spa pack's original HMI/controller board is dead. The relay box and all power-stage hardware — including the heater, pumps, relays, and manifold-mounted temperature sensors — are still fully functional. This project plugs an ESP32 into the relay box's DB15 port via a terminal adapter, replacing the OEM interface entirely. A Home Assistant dashboard provides thermostat control, pump management, filter scheduling, and real-time temperature monitoring.
 
 ---
 
@@ -13,15 +13,21 @@ The Apollo 11 spa pack's original HMI/controller board is dead. The relay box an
 │   ESP32 (uPesy      │     Adapter             │  Apollo 11 Relay Box     │
 │   WROOM DevKit)     ├─────────────────────────┤                          │
 │                     │  Logic signals (3.3V)   │  Internal relays for:    │
-│  ESPHome firmware   │  NTC sensor inputs      │  - Heater coil           │
+│  ESPHome firmware   │  OEM NTC sensor inputs  │  - Heater coil           │
 │  WiFi → Home Asst.  │  3.3V power FROM box    │  - Hi-Limit 1 & 2       │
 │                     │                         │  - Pump 1 (Low/High)     │
-└─────────────────────┘                         │  - Pump 2               │
-                                                │  - Circulator            │
+│  External sensor:   │  External sensor wire   │  - Pump 2               │
+│  Spa body NTC ──────┤  (not through DB15)     │  - Circulator            │
+│                     │                         │                          │
+└─────────────────────┘                         │  OEM sensors (on heater):│
+                                                │  - Inlet NTC (DB15/5)    │
+                                                │  - Outlet NTC (DB15/6)   │
                                                 └──────────────────────────┘
 ```
 
 **The ESP32 does not drive relays directly.** It sends logic-level signals through the DB15 connector to the Apollo 11 relay box, which handles all power switching. The relay box also provides 3.3 V power to the ESP32 through the same DB15 connection.
+
+The **inlet and outlet temperature sensors are OEM** — they are built into the Apollo 11 relay box and physically attached to the heater manifold. The **spa body temperature sensor is external**, added as part of this project to measure the actual spa water temperature for thermostat control.
 
 ---
 
@@ -34,7 +40,8 @@ The Apollo 11 spa pack's original HMI/controller board is dead. The relay box an
 | Connection | DB15 terminal adapter → Apollo 11 relay box DB15 port |
 | Power | 3.3 V supplied by the relay box via DB15 Pin 1 |
 | Framework | ESPHome (ESP-IDF) |
-| Temp Sensors | 3× 10 kΩ NTC thermistors (inlet, outlet, spa body) |
+| OEM Sensors | Inlet & outlet NTCs (built into relay box, on heater manifold) |
+| External Sensor | Spa body NTC (added, measures actual spa water temp) |
 | Integration | Home Assistant via encrypted native API |
 
 ### DB15 Pinout
@@ -45,9 +52,9 @@ The Apollo 11 spa pack's original HMI/controller board is dead. The relay box an
 | Pin 2 | GPIO25 | `r_HiLim_1` | Heater hi-limit relay 1 |
 | Pin 3 | GPIO26 | `r_HiLim_2` | Heater hi-limit relay 2 |
 | Pin 4 | GPIO13 | `r_Heater` | Heater coil relay |
-| Pin 5 | GPIO34 | `inlet_sensor` | Inlet water temp (ADC) |
-| Pin 6 | GPIO35 | `outlet_sensor` | Outlet water temp (ADC) |
-| Pin 7 | GPIO39 | `spa_sensor` | Spa body water temp (ADC) |
+| Pin 5 | GPIO34 | `inlet_sensor` | Inlet water temp — OEM (ADC) |
+| Pin 6 | GPIO35 | `outlet_sensor` | Outlet water temp — OEM (ADC) |
+| Pin 7 | GPIO39 | `spa_sensor` | Spa body water temp — external (ADC) |
 | Pin 10 | GPIO18 | `r_P1_low` | Pump 1 — low speed |
 | Pin 11 | GPIO19 | `r_P1_high` | Pump 1 — high speed |
 | Pin 13 | GPIO32 | `r_Circ` | Circulator pump |
@@ -57,11 +64,13 @@ The relay box energises its internal relays when the corresponding DB15 input is
 
 ### Temperature Sensors
 
-| Sensor | GPIO | Divider Config | Reference Resistor | Location |
-|--------|------|----------------|--------------------|----------|
-| Inlet | 34 | DOWNSTREAM | 9.0 kΩ | Heater manifold inlet |
-| Outlet | 35 | DOWNSTREAM | 9.0 kΩ | Heater manifold outlet |
-| Spa | 39 | UPSTREAM | 10.0 kΩ | Spa body water |
+| Sensor | GPIO | Divider Config | Ref Resistor | Location | Origin |
+|--------|------|----------------|--------------|----------|--------|
+| Inlet | 34 | DOWNSTREAM | 9.0 kΩ | Heater manifold inlet | **OEM** (relay box) |
+| Outlet | 35 | DOWNSTREAM | 9.0 kΩ | Heater manifold outlet | **OEM** (relay box) |
+| Spa | 39 | UPSTREAM | 10.0 kΩ | Spa body water | **External** (added) |
+
+The inlet and outlet NTCs are part of the Apollo 11 relay box hardware, physically mounted on the heater element/manifold. Their signals pass through the DB15 connector. The spa body sensor is a separate NTC added to this project, wired directly to the ESP32, to provide an accurate reading of the actual spa water temperature for thermostat control.
 
 All three use the same NTC calibration: `10.0 kΩ → 25°C`, `32.665 kΩ → 0°C`, `6.530 kΩ → 35°C`.
 
@@ -100,7 +109,7 @@ The `Virtual Heater` template switch is the **only approved way** to turn the he
 
 ## Startup Self-Test
 
-Runs automatically on every boot. The system **will not heat** until all tests pass. The test exploits the physics of stagnant water — with no flow, even a short heater pulse produces a large, easily-detected temperature rise on the outlet NTC.
+Runs automatically on every boot. The system **will not heat** until all tests pass. The test exploits the physics of stagnant water — with no flow, even a short heater pulse produces a large, easily-detected temperature rise on the OEM outlet NTC (which is physically attached to the heater element inside the relay box).
 
 > **Why not measure inlet-to-outlet delta with flow?** The ADC/NTC sensor chain lacks the resolution to reliably detect the small temperature differential across the heater manifold when water is moving. Stagnant water eliminates this problem entirely.
 
@@ -122,7 +131,7 @@ Primes the median/EMA filter chains with 5 rounds of manual reads. Verifies inle
 #### Step 3 — Full Circuit, Heater ON (pulse)
 - All three relays energised via DB15
 - Heater fires into stagnant water for `heater_pulse_ms` (default 2000 ms, tunable from HA, hard-clamped to 6000 ms max)
-- ✅ Verify **temperature rise ≥ 0.5°C** on outlet sensor
+- ✅ Verify **temperature rise ≥ 0.5°C** on OEM outlet sensor
 - Uses "check once, retry once" — if the first read window doesn't show enough rise, a second window is attempted
 - 50°C safety abort at each window boundary
 - **Heater relay stays ON** for the break tests
@@ -151,7 +160,7 @@ Any failure → all outputs killed → `boot_failed = true` → HA notification.
 ## Runtime Operation
 
 ### Thermostat
-ESPHome `thermostat` climate entity (`Spa Temp Controller`) using the calibrated `spa_temp` sensor. Controls the heater via `virtual_heater` on/off with a triple safety gate.
+ESPHome `thermostat` climate entity (`Spa Temp Controller`) using the calibrated external `spa_temp` sensor. Controls the heater via `virtual_heater` on/off with a triple safety gate.
 
 | Parameter | Value |
 |-----------|-------|
@@ -161,7 +170,7 @@ ESPHome `thermostat` climate entity (`Spa Temp Controller`) using the calibrated
 | Temperature range | 5°C – 40.6°C |
 
 ### High-Temperature Alarm
-Triggers if **any** sensor exceeds 42°C:
+Triggers if **any** sensor (OEM inlet, OEM outlet, or external spa) exceeds 42°C:
 - Heater circuit killed (all 3 relay signals dropped)
 - Pumps **stay running** for circulation/cooling
 - Virtual heater state updated via `publish_state()` (avoids triggering `turn_off_action`, which would kill the pump)
@@ -193,10 +202,10 @@ Manual trigger available via **"Run Filter Cycle"** button. Timer text sensors d
 ### Sensors
 | Entity | Detail |
 |--------|--------|
-| Inlet Temperature | Heater manifold inlet (°C) |
-| Outlet Temperature | Heater manifold outlet (°C) |
-| Spa Temperature Raw | Uncorrected NTC reading (°C) |
-| Spa Temperature | Corrected reading (raw + offset) (°C) |
+| Inlet Temperature | OEM heater manifold inlet (°C) |
+| Outlet Temperature | OEM heater manifold outlet (°C) |
+| Spa Temperature Raw | Uncorrected external spa body NTC reading (°C) |
+| Spa Temperature | Corrected external spa reading (raw + offset) (°C) |
 | Inlet/Outlet Voltage | Raw ADC readings (debug) |
 | Inlet/Outlet Resistance | Calculated resistance (debug) |
 
@@ -219,7 +228,7 @@ Manual trigger available via **"Run Filter Cycle"** button. Timer text sensors d
 | Entity | Range | Default | Purpose |
 |--------|-------|---------|---------|
 | Heater Test Pulse (ms) | 500–6000 | 2000 | Startup test heater-on duration |
-| Spa Temp Offset (°C) | −5.0 to +5.0 | 0.0 | Spa NTC calibration correction |
+| Spa Temp Offset (°C) | −5.0 to +5.0 | 0.0 | External spa NTC calibration correction |
 | Filter Cycle Interval (min) | 60–1440 | 240 | Time between automatic filter runs |
 | Filter Cycle Runtime (min) | 1–120 | 60 | Duration of each filter run |
 
@@ -245,10 +254,10 @@ Manual trigger available via **"Run Filter Cycle"** button. Timer text sensors d
 | `hi_limit_triggered` | bool | no | Latched alarm flag |
 | `boot_testing_active` | bool | no | Suppresses interval sensor polling |
 | `boot_failed` | bool | no | Blocks all heating |
-| `heater_temp_baseline_inlet` | float | no | Test reference temperature |
-| `heater_temp_baseline_outlet` | float | no | Test reference temperature |
+| `heater_temp_baseline_inlet` | float | no | Test reference temperature (OEM sensor) |
+| `heater_temp_baseline_outlet` | float | no | Test reference temperature (OEM sensor) |
 | `heater_pulse_ms` | uint32 | yes | Startup test pulse duration |
-| `spa_temp_offset` | float | yes | Spa NTC calibration offset |
+| `spa_temp_offset` | float | yes | External spa NTC calibration offset |
 | `temp_deadband` | float | no | Rise/fall detection threshold |
 | `filter_last_run_time` | uint32 | yes | `millis()` timestamp of last filter run |
 | `filter_cycle_enabled` | bool | yes | Automatic filter on/off |
