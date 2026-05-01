@@ -776,6 +776,7 @@ button:
   ## Guard: won't turn off if virtual heater is active (needs flow).
   - platform: template
     name: "Pump 1 Low"
+    icon: "mdi:pump"
     on_press:
       - script.execute: manual_p1_low
 
@@ -783,6 +784,7 @@ button:
   ## Guard: restores P1 Low if virtual heater was running.
   - platform: template
     name: "Pump 1 High (Jets)"
+    icon: "mdi:waves-arrow-up"
     on_press:
       - script.execute: manual_p1_high
 
@@ -790,6 +792,7 @@ button:
   ## Guard: won't turn off if filter cycle is running.
   - platform: template
     name: "Pump 2 High"
+    icon: "mdi:water-pump"
     on_press:
       - script.execute: manual_p2_high
 
@@ -800,6 +803,7 @@ button:
   ## verifying the over-temp condition has been resolved.
   - platform: template
     name: "Reset Hi-Limit"
+    icon: "mdi:restart-alert"
     on_press:
       - logger.log: "Manual hi-limit reset triggered by user."
       - globals.set:
@@ -818,6 +822,7 @@ button:
   ## failure has been investigated and corrected.
   - platform: template
     name: "Retry Startup Test"
+    icon: "mdi:test-tube"
     on_press:
       - logger.log: "Manual startup test retry triggered by user."
       - script.execute: startup_test_sequence
@@ -826,9 +831,9 @@ button:
   ## Ignored if a filter cycle is already running.
   - platform: template
     name: "Run Filter Cycle"
+    icon: "mdi:air-filter"
     on_press:
       - script.execute: manual_filter_cycle
-
 
 ## ═══════════════════════════════════════════════════════════════════════════
 ## TEXT SENSORS — filter cycle timers displayed in hh:mm format
