@@ -70,6 +70,34 @@
 ##   Pin 13   │ GPIO32 │ r_Circ          │ Switch   │ Circulator pump
 ##   Pin 15   │ GPIO22 │ r_P2_high       │ Switch   │ Pump 2 — high speed
 ##
+## FACEPLATE DISPLAY
+## ───────────────────
+##   2.4" SSD1306/SSD1309 128×64 monochrome OLED on I2C.
+##   SDA = GPIO21, SCL = GPIO23 (GPIO22 is occupied by r_P2_high).
+##   Address: 0x3C. LVGL owns all rendering.
+##
+## FACEPLATE PUSHBUTTONS
+## ─────────────────────
+##   4 buttons wired active-LOW to GND with ESP32 internal pull-ups.
+##
+##   Button │ GPIO   │ Function
+##   ───────┼────────┼──────────────────────────────────────
+##   Btn 1  │ GPIO27 │ P1 — toggle Pump 1 Low (manual_p1_low)
+##   Btn 2  │ GPIO14 │ P2 — toggle Pump 2 High (manual_p2_high)
+##   Btn 3  │ GPIO33 │ Temp Up (+1°F / +0.5556°C)
+##   Btn 4  │ GPIO4  │ Temp Down (-1°F / -0.5556°C)
+##
+##   Config mode placeholder: hold Btn 1 + Btn 4 for 10 s (future use).
+##
+## FACEPLATE SCREEN LAYOUT
+## ───────────────────────
+##   ┌────────────────────────────────┐
+##   │                        -68dBm  │  WiFi RSSI
+##   │  98.5°F                        │  Current spa temp
+##   │  Set: 100°F                    │  Thermostat setpoint
+##   │  P1   P2    ▲     ▼            │  Button labels
+##   └────────────────────────────────┘
+##
 ## TEMPERATURE SENSORS
 ## ───────────────────
 ##   Three 10 kOhm NTC thermistors in voltage-divider configurations.
@@ -272,6 +300,7 @@
 ##
 ## BINARY SENSORS
 ##   Startup Test Complete   — true after all tests pass
+##   Startup Test Complete   — true after all tests pass
 ##   High Temperature Alarm  — true when any sensor > 42°C
 ##   Hi-Limit Relay Triggered — true when alarm has fired (latched)
 ##   Boot Failed             — true if startup test failed
@@ -358,6 +387,139 @@ wifi:
     password: "ZhJIBrjT85cJ"
 
 captive_portal:
+
+
+## ═══════════════════════════════════════════════════════════════════════════
+## I2C — faceplate OLED display bus
+## ═══════════════════════════════════════════════════════════════════════════
+## SCL is on GPIO23 instead of the ESP32 default GPIO22 because GPIO22
+## is already used by r_P2_high (Pump 2 High relay output).
+
+i2c:
+  sda: GPIO21
+  scl: GPIO23
+  scan: true
+  frequency: 400kHz
+
+
+## ═══════════════════════════════════════════════════════════════════════════
+## FONTS — LVGL font resources for the faceplate OLED
+## ═══════════════════════════════════════════════════════════════════════════
+
+font:
+
+  ## Large temperature readout (center of screen)
+  - file: "gfonts://Roboto"
+    id: font_temp
+    size: 20
+    bpp: 4
+    glyphs: '0123456789.-°F '
+
+  ## Setpoint / info line
+  - file: "gfonts://Roboto"
+    id: font_info
+    size: 12
+    bpp: 4
+    glyphs: 'SsetTempCfg:0123456789.-°F '
+
+  ## WiFi dBm and pump labels
+  - file: "gfonts://Roboto"
+    id: font_label
+    size: 10
+    bpp: 4
+    glyphs: 'P12dBm-0123456789 '
+
+  ## Material Design Icons — chevron arrows for temp up/down
+  - file: "https://github.com/Templarian/MaterialDesign-Webfont/raw/master/fonts/materialdesignicons-webfont.ttf"
+    id: font_mdi_sm
+    size: 14
+    bpp: 4
+    glyphs:
+      - "\U000F0143"  ## mdi:chevron-up
+      - "\U000F0140"  ## mdi:chevron-down
+
+
+## ═══════════════════════════════════════════════════════════════════════════
+## DISPLAY — faceplate OLED (SSD1306/SSD1309 128×64 monochrome)
+## ═══════════════════════════════════════════════════════════════════════════
+## LVGL owns all rendering. The display component only provides the
+## hardware interface; do NOT use display.lambda here.
+
+display:
+  - platform: ssd1306_i2c
+    id: oled_display
+    model: "SSD1306 128x64"
+    address: 0x3C
+    auto_clear_enabled: false
+    update_interval: 1s
+
+
+## ═══════════════════════════════════════════════════════════════════════════
+## LVGL — faceplate GUI layout
+## ═══════════════════════════════════════════════════════════════════════════
+##
+##   ┌────────────────────────────────┐
+##   │                        -68dBm  │  WiFi RSSI (top-right)
+##   │  98.5°F                        │  Current spa temp (large)
+##   │  Set: 100°F                    │  Thermostat setpoint
+##   │  P1   P2    ▲     ▼            │  Button labels
+##   └────────────────────────────────┘
+##
+
+lvgl:
+  displays:
+    - oled_display
+  log_level: WARN
+  pages:
+    - id: main_page
+      widgets:
+        ## WiFi signal strength — top-right corner
+        - label:
+            id: lbl_wifi
+            align: TOP_RIGHT
+            x: -2
+            y: 2
+            text: "--dBm"
+            text_font: font_label
+        ## Current spa temperature — large, upper-left area
+        - label:
+            id: lbl_temp_current
+            x: 2
+            y: 14
+            text: "--.-°F"
+            text_font: font_temp
+        ## Thermostat setpoint
+        - label:
+            id: lbl_temp_setpoint
+            x: 2
+            y: 38
+            text: "Set: --°F"
+            text_font: font_info
+        ## Bottom row — button function labels
+        - label:
+            id: lbl_p1
+            x: 6
+            y: 54
+            text: "P1"
+            text_font: font_label
+        - label:
+            id: lbl_p2
+            x: 38
+            y: 54
+            text: "P2"
+            text_font: font_label
+        - label:
+            id: lbl_up
+            x: 66
+            y: 52
+            text: "\U000F0143"
+            text_font: font_mdi_sm
+        - label:
+            id: lbl_dn
+            x: 100
+            y: 52
+            text: "\U000F0140"
+            text_font: font_mdi_sm
 
 
 ## ═══════════════════════════════════════════════════════════════════════════
@@ -461,6 +623,17 @@ globals:
     type: bool
     restore_value: no
     initial_value: 'false'
+
+## ── Faceplate / Config Mode ──────────────────────────────────────────────
+- id: config_mode
+  type: bool
+  restore_value: no
+  initial_value: 'false'
+
+- id: config_hold_start
+  type: uint32_t
+  restore_value: no
+  initial_value: '0'
 
 
 ## ═══════════════════════════════════════════════════════════════════════════
@@ -716,6 +889,17 @@ sensor:
 ## BINARY SENSORS — boolean status exposed to Home Assistant
 ## ═══════════════════════════════════════════════════════════════════════════
 
+
+  ## ── WIFI SIGNAL STRENGTH ────────────────────────────────────────────────
+  ## Internal sensor used by the LVGL faceplate display to show dBm.
+  ## Not exposed to HA (internal: true).
+  - platform: wifi_signal
+    id: wifi_rssi
+    name: "WiFi Signal"
+    update_interval: 30s
+    internal: true
+
+
 binary_sensor:
 
   - platform: template
@@ -753,6 +937,70 @@ binary_sensor:
   - platform: template
     name: "Pump 2 High Running"
     lambda: 'return id(r_P2_high).state;'
+
+  ## ── Faceplate Pushbuttons ──────────────────────────────────────────────
+  ## 4 physical buttons on the spa faceplate, wired active-LOW with ESP32
+  ## internal pull-ups. Each button triggers the same script that the
+  ## corresponding HA button uses, keeping behaviour identical.
+  ##   Btn 1 (GPIO27) = P1 toggle     Btn 2 (GPIO14) = P2 toggle
+  ##   Btn 3 (GPIO33) = Temp Up (+1°F) Btn 4 (GPIO4)  = Temp Down (-1°F)
+
+  - platform: gpio
+    id: btn_p1
+    pin:
+      number: GPIO27
+      mode: INPUT_PULLUP
+      inverted: true
+    name: "Faceplate P1"
+    internal: true
+    filters:
+      - delayed_on: 50ms
+      - delayed_off: 50ms
+    on_press:
+      - script.execute: manual_p1_low
+
+  - platform: gpio
+    id: btn_p2
+    pin:
+      number: GPIO14
+      mode: INPUT_PULLUP
+      inverted: true
+    name: "Faceplate P2"
+    internal: true
+    filters:
+      - delayed_on: 50ms
+      - delayed_off: 50ms
+    on_press:
+      - script.execute: manual_p2_high
+
+  - platform: gpio
+    id: btn_temp_up
+    pin:
+      number: GPIO33
+      mode: INPUT_PULLUP
+      inverted: true
+    name: "Faceplate Temp Up"
+    internal: true
+    filters:
+      - delayed_on: 50ms
+      - delayed_off: 50ms
+    on_press:
+      - script.execute: adjust_setpoint_up
+
+  - platform: gpio
+    id: btn_temp_down
+    pin:
+      number: GPIO4
+      mode: INPUT_PULLUP
+      inverted: true
+    name: "Faceplate Temp Down"
+    internal: true
+    filters:
+      - delayed_on: 50ms
+      - delayed_off: 50ms
+    on_press:
+      - script.execute: adjust_setpoint_down
+
 
 
 ## ═══════════════════════════════════════════════════════════════════════════
@@ -1115,6 +1363,46 @@ script:
             - logger.log: "Manual Pump 2 High auto-off — timer expired."
           else:
             - logger.log: "Manual Pump 2 High auto-off SKIPPED — filter cycle is active."
+
+
+  ###########################################################################
+  ## FACEPLATE BUTTON SCRIPTS — setpoint adjustment and config mode
+  ###########################################################################
+
+  ## Bump thermostat setpoint UP by 1°F (0.5556°C).
+  ## Clamps to the thermostat max of 40.6°C (105°F).
+  - id: adjust_setpoint_up
+    then:
+      - lambda: |-
+          float current = id(spa_thermostat).target_temperature;
+          float new_val = current + 0.5556f;
+          if (new_val > 40.6f) new_val = 40.6f;
+          auto call = id(spa_thermostat).make_call();
+          call.set_target_temperature(new_val);
+          call.perform();
+          ESP_LOGI("faceplate", "Setpoint UP → %.1f°C (%.0f°F)", new_val, new_val * 9.0f / 5.0f + 32.0f);
+
+  ## Bump thermostat setpoint DOWN by 1°F (0.5556°C).
+  ## Clamps to the thermostat min of 5.0°C (41°F).
+  - id: adjust_setpoint_down
+    then:
+      - lambda: |-
+          float current = id(spa_thermostat).target_temperature;
+          float new_val = current - 0.5556f;
+          if (new_val < 5.0f) new_val = 5.0f;
+          auto call = id(spa_thermostat).make_call();
+          call.set_target_temperature(new_val);
+          call.perform();
+          ESP_LOGI("faceplate", "Setpoint DOWN → %.1f°C (%.0f°F)", new_val, new_val * 9.0f / 5.0f + 32.0f);
+
+  ## Config mode — placeholder for future faceplate configuration menu.
+  ## Activated by holding Btn 1 (P1) + Btn 4 (Temp Down) for 10 seconds.
+  - id: enter_config_mode
+    then:
+      - logger.log: "CONFIG MODE ENTERED (placeholder)"
+      - globals.set:
+          id: config_mode
+          value: 'true'
 
 
   ###########################################################################
@@ -1639,6 +1927,48 @@ interval:
     then:
       - script.execute: filter_cycle_loop
 
+  ## LVGL faceplate display refresh — updates all on-screen labels
+  - interval: 2s
+    then:
+      - lvgl.label.update:
+          id: lbl_wifi
+          text:
+            format: "%ddBm"
+            args: ['(int)id(wifi_rssi).state']
+      - lvgl.label.update:
+          id: lbl_temp_current
+          text: !lambda |-
+            if (isnan(id(spa_temp).state)) return "--.-°F";
+            float f = id(spa_temp).state * 9.0f / 5.0f + 32.0f;
+            static char buf[12];
+            snprintf(buf, sizeof(buf), "%.1f°F", f);
+            return std::string(buf);
+      - lvgl.label.update:
+          id: lbl_temp_setpoint
+          text: !lambda |-
+            float c = id(spa_thermostat).target_temperature;
+            if (isnan(c)) return "Set: --°F";
+            float f = c * 9.0f / 5.0f + 32.0f;
+            static char buf[16];
+            snprintf(buf, sizeof(buf), "Set: %.0f°F", f);
+            return std::string(buf);
+
+  ## Config-mode detector — hold Btn 1 (P1) + Btn 4 (Temp Down) for 10s
+  - interval: 500ms
+    then:
+      - lambda: |-
+          if (id(btn_p1).state && id(btn_temp_down).state) {
+            if (id(config_hold_start) == 0) {
+              id(config_hold_start) = millis();
+            } else if (millis() - id(config_hold_start) > 10000) {
+              id(enter_config_mode).execute();
+              id(config_hold_start) = 0;
+            }
+          } else {
+            id(config_hold_start) = 0;
+          }
+
+
 
 ## ═══════════════════════════════════════════════════════════════════════════
 ## CLIMATE — thermostat for spa water temperature
@@ -1650,6 +1980,7 @@ interval:
 climate:
   - platform: thermostat
     name: "Spa Temp Controller"
+  id: spa_thermostat
     sensor: spa_temp
     min_heating_off_time: 60s
     min_heating_run_time: 3s
