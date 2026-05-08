@@ -58,31 +58,19 @@
 ## DB15 PINOUT CROSS-REFERENCE
 ## ───────────────────────────
 ##   DB15 Pin │ GPIO   │ ESPHome ID      │ Type     │ Function
-##   ─────────┼────────┼─────────────────┼──────────┼─────────────────────
+##   ─────────┼────────┼─────────────────┼──────────┼─────────────────────────
 ##   Pin 1    │ 3.3V   │ —               │ Power    │ 3.3 V from relay box
-##   Pin 2    │ GPIO25 │ r_HiLim_1       │ Output   │ Heater hi-limit relay 1
-##   Pin 3    │ GPIO26 │ r_HiLim_2       │ Output   │ Heater hi-limit relay 2
-##   Pin 4    │ GPIO13 │ r_Heater        │ Output   │ Heater coil relay
-##   Pin 5    │ GPIO34 │ inlet_sensor    │ ADC In   │ Inlet water temp (NTC)
-##   Pin 6    │ GPIO35 │ outlet_sensor   │ ADC In   │ Outlet water temp (NTC)
-##   Pin 7    │ GPIO39 │ spa_sensor      │ ADC In   │ Spa/jacuzzi temp (NTC)
-##   Pin 10   │ GPIO18 │ r_P1_low        │ Switch   │ Pump 1 — low speed
-##   Pin 11   │ GPIO19 │ r_P1_high       │ Switch   │ Pump 1 — high speed
-##   Pin 13   │ GPIO32 │ r_Circ          │ Switch   │ Circulator pump
-##   Pin 15   │ GPIO22 │ r_P2_high       │ Switch   │ Pump 2 — high speed
+##   Pin 2    │ GPIO32 │ r_HiLim_1       │ Output   │ Heater hi-limit relay 1
+##   Pin 3    │ GPIO33 │ r_HiLim_2       │ Output   │ Heater hi-limit relay 2
+##   Pin 4    │ GPIO25 │ r_Heater        │ Output   │ Heater coil relay
+##   Pin 5    │ GPIO36 │ inlet_sensor    │ ADC In   │ Inlet water temp (NTC)
+##   Pin 6    │ GPIO39 │ outlet_sensor   │ ADC In   │ Outlet water temp (NTC)
+##   Pin 7    │ GPIO34 │ spa_sensor      │ ADC In   │ Spa/jacuzzi temp (NTC)
+##   Pin 10   │ GPIO26 │ r_P1_low        │ Switch   │ Pump 1 — low speed
+##   Pin 11   │ GPIO27 │ r_P1_high       │ Switch   │ Pump 1 — high speed
+##   Pin 13   │ GPIO14 │ r_Circ          │ Switch   │ Circulator pump
+##   Pin 15   │ GPIO13 │ r_P2_low        │ Switch   │ Pump 2 — low speed
 ##
-## ═══════════════════════════════════════════════════════════════════════════
-## FACEPLATE — OLED DISPLAY + PUSH-BUTTONS
-## ═══════════════════════════════════════════════════════════════════════════
-##
-##   The faceplate is a local HMI panel mounted at the spa. It provides
-##   basic control and monitoring WITHOUT requiring a phone, tablet, or
-##   Home Assistant connection. All faceplate GPIOs are on the RIGHT side
-##   of the ESP32 DevKit C, physically separated from the DB15 signals.
-##
-##   ┌─────────────────────────────────────────────────────────────────────┐
-##   │  HARDWARE                                                          │
-##   ├─────────────────────────────────────────────────────────────────────┤
 ##   │                                                                    │
 ##   │  DISPLAY:  SSD1306 128×64 OLED, I²C bus, 0x3C                     │
 ##   │            Connected via GPIO22 (SDA) and GPIO23 (SCL)             │
@@ -174,11 +162,11 @@
 ##
 ##   Sensor   │ GPIO │ Config     │ Ref Resistor │ Location          │ Origin
 ##   ─────────┼──────┼────────────┼──────────────┼───────────────────┼────────
-##   Inlet    │ 34   │ DOWNSTREAM │ 9.0 kOhm    │ Heater manifold   │ OEM
-##   Outlet   │ 35   │ DOWNSTREAM │ 9.0 kOhm    │ Heater manifold   │ OEM
-##   Spa      │ 39   │ UPSTREAM   │ 10.0 kOhm   │ Spa body water    │ Added
+##   Inlet    │ 36   │ DOWNSTREAM │ 9.0 kOhm    │ Heater manifold   │ OEM
+##   Outlet   │ 39   │ DOWNSTREAM │ 9.0 kOhm    │ Heater manifold   │ OEM
+##   Spa      │ 34   │ UPSTREAM   │ 10.0 kOhm   │ Spa body water    │ Added
 ##
-##   ADC pins (GPIO34, 35, 39) are input-only on the ESP32 and have no
+##   ADC pins (GPIO34, 35, 36, 39) are input-only on the ESP32 and have no
 ##   internal pull-up capability.
 ##
 ##   Calibration points (all three sensors):
