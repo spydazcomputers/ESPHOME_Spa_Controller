@@ -1575,14 +1575,17 @@ script:
             - logger.log: "ERROR: Temperature sensors out of range or NaN. Aborting."
             - script.execute: startup_test_abort
 
-  ###########################################################################
+###########################################################################
   ### STARTUP TEST — static heater + pump-flush hi-limit break verification
   ### Step 1: Hi-Limit 1 ON only -> NO heat (circuit incomplete)
   ### Step 2: Both Hi-Limits ON, Heater OFF -> NO heat (heater relay open)
-  ### Step 3: Full circuit, Heater ON (pulse)-> RISE expected
-  ###         Heater relay STAYS ON.
-  ### Step 4: Open HL1, Pump flush 15s, pump off -> NO rise (HL1 breaks it)
-  ### Step 5: Close HL1, Open HL2, Pump flush 15s, pump off -> NO rise
+  ### Step 3: Full circuit, Heater ON (pulse) -> RISE expected
+  ###         HL1 opened immediately after pulse to stop heating.
+  ###         Heater relay STAYS ON for break tests.
+  ### Step 4: HL1 already open from Step 3. Pump flush, stagnant check.
+  ###         Verifies HL1 breaks the circuit.
+  ### Step 5: Close HL1, Open HL2. Pump flush, stagnant check.
+  ###         Verifies HL2 breaks the circuit.
   ###########################################################################
   - id: static_heater_test
     then:
@@ -1660,9 +1663,11 @@ script:
           then:
             - logger.log: " Step 2 PASSED"
 
-      ### ── STEP 3: FULL CIRCUIT — heater ON, RISE expected ───────────────
-      ### "Check once, retry once" for thermal lag.
-      ### HEATER STAYS ON after this step.
+      ### ── STEP 3: FULL CIRCUIT — heater pulse, then HL1 opens ──────────
+      ### Heater fires for pulse duration into stagnant water. HL1 opens
+      ### IMMEDIATELY after pulse to stop heating. Read windows measure
+      ### residual heat only — no risk of runaway. Heater relay stays ON
+      ### for hi-limit break verification in Steps 4 & 5.
       - if:
           condition:
             lambda: "return !id(boot_failed);"
@@ -1675,9 +1680,13 @@ script:
                 value: !lambda "return id(outlet_temp).state;"
             - output.turn_on: r_Heater
             - delay: !lambda "return std::min(id(heater_pulse_ms), (uint32_t)6000);"
-            - logger.log: " Pulse complete. Heater remains ON. Reading outlet..."
 
-            ## ── First read window ───────────────────────────────────────
+            ## Immediately break the circuit — stop heating
+            - output.turn_off: r_HiLim_1
+            - logger.log: " Pulse complete. HL1 opened — circuit broken. Heater relay stays ON."
+            - logger.log: " Reading residual heat on outlet..."
+
+            ## ── First read window (no active heating) ───────────────────
             - delay: 3s
             - component.update: outlet_sensor
             - delay: 1s
@@ -1710,7 +1719,7 @@ script:
                      (id(outlet_temp).state - id(heater_temp_baseline_outlet)) < 0.5;
           then:
             - logger.log: " Rise not yet detected — retrying with second read window..."
-            ## ── Second read window ──────────────────────────────────────
+            ## ── Second read window (still no active heating) ────────────
             - delay: 3s
             - component.update: outlet_sensor
             - delay: 1s
@@ -1750,16 +1759,17 @@ script:
             lambda: "return !id(boot_failed);"
           then:
             - logger.log: " Step 3 PASSED — Heater relay confirmed functional."
-            - logger.log: " Heater relay remains ON for hi-limit break tests."
+            - logger.log: " HL1 open, heater relay ON — ready for break tests."
 
       ### ── STEP 4: HI-LIMIT 1 BREAK TEST ────────────────────────────────
+      ### HL1 is already open from Step 3. Heater relay still ON.
+      ### Pump flush clears residual heat, then stagnant check verifies
+      ### HL1 is actually breaking the circuit.
       - if:
           condition:
             lambda: "return !id(boot_failed);"
           then:
-            - logger.log: "Step 4: Hi-Limit 1 OPEN. Heater relay still ON. Pump flush 15s."
-            - output.turn_off: r_HiLim_1
-            - delay: 500ms
+            - logger.log: "Step 4: HL1 already open. Heater relay still ON. Pump flush 15s."
             - switch.turn_on: r_P1_high
             - logger.log: " Pump 1 High ON — flushing manifold..."
             - delay: 15s
@@ -1805,6 +1815,7 @@ script:
 
       ### ── STEP 5: HI-LIMIT 2 BREAK TEST ────────────────────────────────
       ### Safe swap: open HL2 first (HL1 still open), then close HL1.
+      ### Circuit is NEVER complete during the swap.
       - if:
           condition:
             lambda: "return !id(boot_failed);"
