@@ -71,6 +71,98 @@
 ##   Pin 13   │ GPIO32 │ r_Circ          │ Switch   │ Circulator pump
 ##   Pin 15   │ GPIO22 │ r_P2_high       │ Switch   │ Pump 2 — high speed
 ##
+## ═══════════════════════════════════════════════════════════════════════════
+## FACEPLATE — OLED DISPLAY + PUSH-BUTTONS
+## ═══════════════════════════════════════════════════════════════════════════
+##
+##   The faceplate is a local HMI panel mounted at the spa. It provides
+##   basic control and monitoring WITHOUT requiring a phone, tablet, or
+##   Home Assistant connection. All faceplate GPIOs are on the RIGHT side
+##   of the ESP32 DevKit C, physically separated from the DB15 signals.
+##
+##   ┌─────────────────────────────────────────────────────────────────────┐
+##   │  HARDWARE                                                          │
+##   ├─────────────────────────────────────────────────────────────────────┤
+##   │                                                                    │
+##   │  DISPLAY:  SSD1306 128×64 OLED, I²C bus, 0x3C                     │
+##   │            Connected via GPIO22 (SDA) and GPIO23 (SCL)             │
+##   │            Refresh rate: 2 seconds (LVGL label updates)            │
+##   │            Driven by LVGL widget engine inside ESPHome             │
+##   │                                                                    │
+##   │  BUTTONS:  4× momentary push-buttons, active LOW                   │
+##   │            Internal pull-ups enabled, 50 ms debounce               │
+##   │            Active-low means: button pressed = GPIO reads LOW       │
+##   │            All buttons are marked internal (not exposed to HA)     │
+##   │                                                                    │
+##   └─────────────────────────────────────────────────────────────────────┘
+##
+##   FACEPLATE GPIO MAP
+##   ──────────────────
+##   GPIO   │ ESPHome ID      │ Type     │ Function
+##   ───────┼─────────────────┼──────────┼────────────────────────────────
+##   GPIO22 │ (I²C SDA)       │ I²C      │ SSD1306 OLED display data
+##   GPIO23 │ (I²C SCL)       │ I²C      │ SSD1306 OLED display clock
+##   GPIO19 │ btn_p1          │ Input PU │ Pump 1 cycle button
+##   GPIO18 │ btn_p2          │ Input PU │ Pump 2 cycle button
+##   GPIO5  │ btn_temp_up     │ Input PU │ Temperature setpoint UP
+##   GPIO17 │ btn_temp_down   │ Input PU │ Temperature setpoint DOWN
+##
+##   NOTE: GPIO5 is a strapping pin — internal pull-up to HIGH at boot
+##   is the correct/safe default (button not pressed = HIGH). ✓
+##
+##
+##   BUTTON BEHAVIOUR
+##   ────────────────
+##   Each pump button cycles through three states:
+##
+##     ┌─────┐  press  ┌─────┐  press  ┌──────┐  press  ┌─────┐
+##     │ OFF │ ──────→ │ LOW │ ──────→ │ HIGH │ ──────→ │ OFF │
+##     └─────┘         └─────┘         └──────┘         └─────┘
+##
+##   P1 BUTTON (GPIO19):
+##     Off  → press → Pump 1 Low ON  (auto-off timer starts)
+##     Low  → press → Pump 1 High ON (interlock kills Low, timer restarts)
+##     High → press → Pump 1 OFF     (restores Low if virtual heater active)
+##
+##   P2 BUTTON (GPIO18):
+##     Off  → press → Pump 2 Low ON  (auto-off timer starts)
+##     Low  → press → Pump 2 High ON (interlock kills Low, timer restarts)
+##     High → press → Pump 2 OFF     (restores Low if filter cycle active)
+##
+##   TEMP UP (GPIO5):
+##     Each press increases the thermostat setpoint by +1°F (+0.5556°C)
+##     Clamped at 40.6°C (105°F) maximum
+##
+##   TEMP DOWN (GPIO17):
+##     Each press decreases the thermostat setpoint by −1°F (−0.5556°C)
+##     Clamped at 5.0°C (41°F) minimum
+##
+##   CONFIG MODE (hidden combo):
+##     Hold P1 + Temp Down simultaneously for 10 seconds
+##     Triggers enter_config_mode script (placeholder for future use)
+##
+##
+##   OLED DISPLAY LAYOUT
+##   ────────────────────
+##   The display is divided into four rows using LVGL labels:
+##
+##   ┌──────────────────────────────────┐
+##   │                        -72 dBm   │  ← lbl_wifi     (font_label 10px)
+##   │  38.5°C                          │  ← lbl_temp_current (font_temp 20px)
+##   │  Set: 39.0°C                     │  ← lbl_temp_setpoint (font_info 12px)
+##   │  P1:Lo  P2:Off                   │  ← lbl_p1 + lbl_p2  (font_label 10px)
+##   └──────────────────────────────────┘
+##
+##   Label updates run on a 2-second interval:
+##     lbl_wifi          — WiFi RSSI in dBm (top-right)
+##     lbl_temp_current  — Current spa_temp reading in °C
+##     lbl_temp_setpoint — Thermostat target in °C ("Set: xx.x°C")
+##     lbl_p1            — Pump 1 state: "P1:Off", "P1:Lo", or "P1:Hi"
+##     lbl_p2            — Pump 2 state: "P2:Off", "P2:Lo", or "P2:Hi"
+##
+##   When spa_temp is NaN (sensor not ready), display shows "--.-°C"
+##   When thermostat target is NaN, display shows "Set: --.-°C"
+
 ## TEMPERATURE SENSORS
 ## ───────────────────
 ##   Three 10 kOhm NTC thermistors in voltage-divider configurations.
