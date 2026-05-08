@@ -70,34 +70,6 @@
 ##   Pin 13   │ GPIO32 │ r_Circ          │ Switch   │ Circulator pump
 ##   Pin 15   │ GPIO22 │ r_P2_high       │ Switch   │ Pump 2 — high speed
 ##
-## FACEPLATE DISPLAY
-## ───────────────────
-##   2.4" SSD1306/SSD1309 128×64 monochrome OLED on I2C.
-##   SDA = GPIO21, SCL = GPIO23 (GPIO22 is occupied by r_P2_high).
-##   Address: 0x3C. LVGL owns all rendering.
-##
-## FACEPLATE PUSHBUTTONS
-## ─────────────────────
-##   4 buttons wired active-LOW to GND with ESP32 internal pull-ups.
-##
-##   Button │ GPIO   │ Function
-##   ───────┼────────┼──────────────────────────────────────
-##   Btn 1  │ GPIO27 │ P1 — toggle Pump 1 Low (manual_p1_low)
-##   Btn 2  │ GPIO14 │ P2 — toggle Pump 2 High (manual_p2_high)
-##   Btn 3  │ GPIO33 │ Temp Up (+1°F / +0.5556°C)
-##   Btn 4  │ GPIO4  │ Temp Down (-1°F / -0.5556°C)
-##
-##   Config mode placeholder: hold Btn 1 + Btn 4 for 10 s (future use).
-##
-## FACEPLATE SCREEN LAYOUT
-## ───────────────────────
-##   ┌────────────────────────────────┐
-##   │                        -68dBm  │  WiFi RSSI
-##   │  98.5°F                        │  Current spa temp
-##   │  Set: 100°F                    │  Thermostat setpoint
-##   │  P1   P2    ▲     ▼            │  Button labels
-##   └────────────────────────────────┘
-##
 ## TEMPERATURE SENSORS
 ## ───────────────────
 ##   Three 10 kOhm NTC thermistors in voltage-divider configurations.
@@ -288,7 +260,7 @@
 ##   Pump 1 Low          — Heater flow pump (interlocked with High)
 ##   Pump 1 High         — Jets (interlocked with Low)
 ##   Circ Pump           — Circulator
-##   Pump 2 High         — Filter cycle pump
+##   Pump 2 Low          — Filter cycle pump
 ##   Virtual Heater      — Safe heater on/off abstraction
 ##
 ## SENSORS
@@ -299,7 +271,6 @@
 ##   Inlet/Outlet Voltage & Resistance — raw ADC chain (debug)
 ##
 ## BINARY SENSORS
-##   Startup Test Complete   — true after all tests pass
 ##   Startup Test Complete   — true after all tests pass
 ##   High Temperature Alarm  — true when any sensor > 42°C
 ##   Hi-Limit Relay Triggered — true when alarm has fired (latched)
@@ -365,7 +336,7 @@ esphome:
       - script.execute: startup_test_sequence
 
 esp32:
-  board: upesy_wroom
+  board: esp32dev
   framework:
     type: esp-idf
 
@@ -390,60 +361,39 @@ captive_portal:
 
 
 ## ═══════════════════════════════════════════════════════════════════════════
-## I2C — faceplate OLED display bus
+## I2C — OLED faceplate display bus
 ## ═══════════════════════════════════════════════════════════════════════════
-## SCL is on GPIO23 instead of the ESP32 default GPIO22 because GPIO22
-## is already used by r_P2_high (Pump 2 High relay output).
 
 i2c:
-  sda: GPIO21
+  sda: GPIO22
   scl: GPIO23
   scan: true
   frequency: 400kHz
 
 
 ## ═══════════════════════════════════════════════════════════════════════════
-## FONTS — LVGL font resources for the faceplate OLED
+## FONTS — LVGL display fonts
 ## ═══════════════════════════════════════════════════════════════════════════
 
 font:
-
-  ## Large temperature readout (center of screen)
   - file: "gfonts://Roboto"
     id: font_temp
     size: 20
     bpp: 4
-    glyphs: '0123456789.-°F '
-
-  ## Setpoint / info line
+    glyphs: "0123456789.-°CF "
   - file: "gfonts://Roboto"
     id: font_info
     size: 12
     bpp: 4
-    glyphs: 'SsetTempCfg:0123456789.-°F '
-
-  ## WiFi dBm and pump labels
   - file: "gfonts://Roboto"
     id: font_label
     size: 10
     bpp: 4
-    glyphs: 'P12dBm-0123456789 '
-
-  ## Material Design Icons — chevron arrows for temp up/down
-  - file: "https://github.com/Templarian/MaterialDesign-Webfont/raw/master/fonts/materialdesignicons-webfont.ttf"
-    id: font_mdi_sm
-    size: 14
-    bpp: 4
-    glyphs:
-      - "\U000F0143"  ## mdi:chevron-up
-      - "\U000F0140"  ## mdi:chevron-down
 
 
 ## ═══════════════════════════════════════════════════════════════════════════
-## DISPLAY — faceplate OLED (SSD1306/SSD1309 128×64 monochrome)
+## DISPLAY — SSD1306 128x64 OLED
 ## ═══════════════════════════════════════════════════════════════════════════
-## LVGL owns all rendering. The display component only provides the
-## hardware interface; do NOT use display.lambda here.
 
 display:
   - platform: ssd1306_i2c
@@ -455,16 +405,8 @@ display:
 
 
 ## ═══════════════════════════════════════════════════════════════════════════
-## LVGL — faceplate GUI layout
+## LVGL — faceplate UI
 ## ═══════════════════════════════════════════════════════════════════════════
-##
-##   ┌────────────────────────────────┐
-##   │                        -68dBm  │  WiFi RSSI (top-right)
-##   │  98.5°F                        │  Current spa temp (large)
-##   │  Set: 100°F                    │  Thermostat setpoint
-##   │  P1   P2    ▲     ▼            │  Button labels
-##   └────────────────────────────────┘
-##
 
 lvgl:
   displays:
@@ -473,53 +415,37 @@ lvgl:
   pages:
     - id: main_page
       widgets:
-        ## WiFi signal strength — top-right corner
         - label:
             id: lbl_wifi
             align: TOP_RIGHT
             x: -2
             y: 2
-            text: "--dBm"
             text_font: font_label
-        ## Current spa temperature — large, upper-left area
+            text: ""
         - label:
             id: lbl_temp_current
             x: 2
             y: 14
-            text: "--.-°F"
             text_font: font_temp
-        ## Thermostat setpoint
+            text: "--.-°C"
         - label:
             id: lbl_temp_setpoint
             x: 2
             y: 38
-            text: "Set: --°F"
             text_font: font_info
-        ## Bottom row — button function labels
+            text: "Set: --.-°C"
         - label:
             id: lbl_p1
             x: 6
             y: 54
-            text: "P1"
             text_font: font_label
+            text: "P1:Off"
         - label:
             id: lbl_p2
             x: 38
             y: 54
-            text: "P2"
             text_font: font_label
-        - label:
-            id: lbl_up
-            x: 66
-            y: 52
-            text: "\U000F0143"
-            text_font: font_mdi_sm
-        - label:
-            id: lbl_dn
-            x: 100
-            y: 52
-            text: "\U000F0140"
-            text_font: font_mdi_sm
+            text: "P2:Off"
 
 
 ## ═══════════════════════════════════════════════════════════════════════════
@@ -624,16 +550,16 @@ globals:
     restore_value: no
     initial_value: 'false'
 
-## ── Faceplate / Config Mode ──────────────────────────────────────────────
-- id: config_mode
-  type: bool
-  restore_value: no
-  initial_value: 'false'
+  ## ── Faceplate / Config Mode ──────────────────────────────────────────
+  - id: config_mode
+    type: bool
+    restore_value: no
+    initial_value: 'false'
 
-- id: config_hold_start
-  type: uint32_t
-  restore_value: no
-  initial_value: '0'
+  - id: config_hold_start
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
 
 
 ## ═══════════════════════════════════════════════════════════════════════════
@@ -648,19 +574,19 @@ output:
 
   ## Pin 2 — Hi-limit relay 1 (safety, series with heater)
   - platform: gpio
-    pin: GPIO25
+    pin: GPIO32
     inverted: false
     id: r_HiLim_1
 
   ## Pin 3 — Hi-limit relay 2 (safety, series with heater)
   - platform: gpio
-    pin: GPIO26
+    pin: GPIO33
     inverted: false
     id: r_HiLim_2
 
   ## Pin 4 — Heater coil relay (energises the heating element)
   - platform: gpio
-    pin: GPIO13
+    pin: GPIO25
     id: r_Heater
     inverted: false
 
@@ -687,10 +613,10 @@ switch:
   ## Pin 10 — Pump 1 low speed (used for heater flow)
   ## Internal only — HA controls via "Pump 1 Low" button + auto-off script.
   - platform: gpio
-    pin: GPIO18
+    pin: GPIO26
     id: r_P1_low
     inverted: false
-    interlock: r_P1_high
+    interlock: [r_P1_low, r_P1_high]
     name: Pump 1 Low
     internal: true
 
@@ -698,10 +624,10 @@ switch:
   ## Internal only — HA controls via "Pump 1 High (Jets)" button + auto-off.
   ## Interlocked with P1 Low — turning on High automatically turns off Low.
   - platform: gpio
-    pin: GPIO19
+    pin: GPIO27
     id: r_P1_high
     inverted: false
-    interlock: r_P1_low
+    interlock: [r_P1_low, r_P1_high]
     name: Pump 1 High
     internal: true
 
@@ -709,18 +635,28 @@ switch:
   ## NOT internal — visible in HA as a regular toggle switch.
   ## Runs continuously after boot; no auto-off timer.
   - platform: gpio
-    pin: GPIO32
+    pin: GPIO14
     id: r_Circ
     inverted: false
     name: Circ Pump
 
-  ## Pin 15 — Pump 2 high speed (used for filter cycle)
-  ## Internal only — HA controls via "Pump 2 High" button + auto-off script.
+  ## Pin 15 — Pump 2 low speed (used for filter cycle)
+  ## Internal only — HA controls via "Pump 2 Low" button + auto-off script.
   ## The filter cycle also uses this switch directly.
   - platform: gpio
-    pin: GPIO22
+    pin: GPIO13
+    id: r_P2_low
+    inverted: false
+    interlock: [r_P2_low, r_P2_high]
+    name: Pump 2 Low
+    internal: true
+
+  ## Pin 14 — Pump 2 high speed (GPIO12 — strapping pin, LOW at boot = off = safe)
+  - platform: gpio
+    pin: GPIO12
     id: r_P2_high
     inverted: false
+    interlock: [r_P2_low, r_P2_high]
     name: Pump 2 High
     internal: true
 
@@ -757,7 +693,7 @@ sensor:
   ## to the heater manifold outlet. Signal carried through DB15 connector.
   - platform: adc
     id: outlet_sensor
-    pin: GPIO35
+    pin: GPIO39
     update_interval: 2s
     name: Outlet Voltage
     attenuation: auto
@@ -797,7 +733,7 @@ sensor:
   ## to the heater manifold inlet. Signal carried through DB15 connector.
   - platform: adc
     id: inlet_sensor
-    pin: GPIO34
+    pin: GPIO36
     update_interval: 2s
     name: Inlet Voltage
     attenuation: auto
@@ -841,7 +777,7 @@ sensor:
   ## which use 9.0 kOhm DOWNSTREAM.
   - platform: adc
     id: spa_sensor
-    pin: GPIO39
+    pin: GPIO34
     update_interval: 10s
     name: Spa Voltage
     attenuation: auto
@@ -885,20 +821,16 @@ sensor:
       return id(spa_temp_raw).state + id(spa_temp_offset);
 
 
-## ═══════════════════════════════════════════════════════════════════════════
-## BINARY SENSORS — boolean status exposed to Home Assistant
-## ═══════════════════════════════════════════════════════════════════════════
-
-
-  ## ── WIFI SIGNAL STRENGTH ────────────────────────────────────────────────
-  ## Internal sensor used by the LVGL faceplate display to show dBm.
-  ## Not exposed to HA (internal: true).
+  ## ── WiFi Signal Strength (for OLED display) ───────────────────────
   - platform: wifi_signal
     id: wifi_rssi
-    name: "WiFi Signal"
     update_interval: 30s
     internal: true
 
+
+## ═══════════════════════════════════════════════════════════════════════════
+## BINARY SENSORS — boolean status exposed to Home Assistant
+## ═══════════════════════════════════════════════════════════════════════════
 
 binary_sensor:
 
@@ -935,72 +867,45 @@ binary_sensor:
     lambda: 'return id(r_P1_high).state;'
 
   - platform: template
+    name: "Pump 2 Low Running"
+    lambda: 'return id(r_P2_low).state;'
+
+  - platform: template
     name: "Pump 2 High Running"
     lambda: 'return id(r_P2_high).state;'
 
-  ## ── Faceplate Pushbuttons ──────────────────────────────────────────────
-  ## 4 physical buttons on the spa faceplate, wired active-LOW with ESP32
-  ## internal pull-ups. Each button triggers the same script that the
-  ## corresponding HA button uses, keeping behaviour identical.
-  ##   Btn 1 (GPIO27) = P1 toggle     Btn 2 (GPIO14) = P2 toggle
-  ##   Btn 3 (GPIO33) = Temp Up (+1°F) Btn 4 (GPIO4)  = Temp Down (-1°F)
-
+  ## ── Faceplate Buttons (right-side GPIOs, active LOW, internal) ────────
   - platform: gpio
     id: btn_p1
-    pin:
-      number: GPIO27
-      mode: INPUT_PULLUP
-      inverted: true
-    name: "Faceplate P1"
+    pin: {number: GPIO19, mode: INPUT_PULLUP, inverted: true}
     internal: true
-    filters:
-      - delayed_on: 50ms
-      - delayed_off: 50ms
+    filters: [{delayed_on: 50ms}, {delayed_off: 50ms}]
     on_press:
-      - script.execute: manual_p1_low
+      - script.execute: faceplate_p1_cycle
 
   - platform: gpio
     id: btn_p2
-    pin:
-      number: GPIO14
-      mode: INPUT_PULLUP
-      inverted: true
-    name: "Faceplate P2"
+    pin: {number: GPIO18, mode: INPUT_PULLUP, inverted: true}
     internal: true
-    filters:
-      - delayed_on: 50ms
-      - delayed_off: 50ms
+    filters: [{delayed_on: 50ms}, {delayed_off: 50ms}]
     on_press:
-      - script.execute: manual_p2_high
+      - script.execute: faceplate_p2_cycle
 
   - platform: gpio
     id: btn_temp_up
-    pin:
-      number: GPIO33
-      mode: INPUT_PULLUP
-      inverted: true
-    name: "Faceplate Temp Up"
+    pin: {number: GPIO5, mode: INPUT_PULLUP, inverted: true}
     internal: true
-    filters:
-      - delayed_on: 50ms
-      - delayed_off: 50ms
+    filters: [{delayed_on: 50ms}, {delayed_off: 50ms}]
     on_press:
       - script.execute: adjust_setpoint_up
 
   - platform: gpio
     id: btn_temp_down
-    pin:
-      number: GPIO4
-      mode: INPUT_PULLUP
-      inverted: true
-    name: "Faceplate Temp Down"
+    pin: {number: GPIO17, mode: INPUT_PULLUP, inverted: true}
     internal: true
-    filters:
-      - delayed_on: 50ms
-      - delayed_off: 50ms
+    filters: [{delayed_on: 50ms}, {delayed_off: 50ms}]
     on_press:
       - script.execute: adjust_setpoint_down
-
 
 
 ## ═══════════════════════════════════════════════════════════════════════════
@@ -1036,8 +941,14 @@ button:
     on_press:
       - script.execute: manual_p1_high
 
-  ## Toggles Pump 2 High. If off → on + auto-off timer. If on → off.
+  ## Toggles Pump 2 Low. If off → on + auto-off timer. If on → off.
   ## Guard: won't turn off if filter cycle is running.
+  - platform: template
+    name: "Pump 2 Low"
+    icon: "mdi:water-pump"
+    on_press:
+      - script.execute: manual_p2_low
+
   - platform: template
     name: "Pump 2 High"
     icon: "mdi:water-pump"
@@ -1326,31 +1237,166 @@ script:
   ## Toggle: if off → turn on + start timer. If on → turn off immediately.
   ## Guard at turn-off: if a filter cycle is running, the filter script
   ## manages its own shutdown — do NOT turn off P2 High.
-  - id: manual_p2_high
+  - id: manual_p2_low
     then:
       - if:
           condition:
-            lambda: 'return id(r_P2_high).state;'
+            lambda: 'return id(r_P2_low).state;'
           then:
             ## Pump is ON — turn it off (with filter guard)
             - if:
                 condition:
                   lambda: 'return !id(filter_running);'
                 then:
-                  - script.stop: manual_p2_high_timer
-                  - switch.turn_off: r_P2_high
-                  - logger.log: "Manual Pump 2 High OFF — user toggled off."
+                  - script.stop: manual_p2_low_timer
+                  - switch.turn_off: r_P2_low
+                  - logger.log: "Manual Pump 2 Low OFF — user toggled off."
                 else:
-                  - logger.log: "Manual Pump 2 High OFF BLOCKED — filter cycle is active."
+                  - logger.log: "Manual Pump 2 Low OFF BLOCKED — filter cycle is active."
           else:
             ## Pump is OFF — turn it on + start auto-off timer
             - logger.log:
-                format: "Manual Pump 2 High ON — auto-off in %u minutes"
+                format: "Manual Pump 2 Low ON — auto-off in %u minutes"
+                args: ['id(pump_auto_off_minutes)']
+            - switch.turn_on: r_P2_low
+            - script.execute: manual_p2_low_timer
+
+  ## Auto-off timer for Pump 2 Low. mode: restart so re-toggling resets it.
+  - id: manual_p2_low_timer
+    mode: restart
+    then:
+      - delay: !lambda 'return id(pump_auto_off_minutes) * 60000U;'
+      - if:
+          condition:
+            lambda: 'return !id(filter_running);'
+          then:
+            - switch.turn_off: r_P2_low
+            - logger.log: "Manual Pump 2 Low auto-off — timer expired."
+          else:
+            - logger.log: "Manual Pump 2 Low auto-off SKIPPED — filter cycle is active."
+
+
+
+  ###########################################################################
+  ## FACEPLATE SCRIPTS — physical button handlers
+  ###########################################################################
+
+  ## P1 cycle: Off → Low → High → Off
+  - id: faceplate_p1_cycle
+    then:
+      - if:
+          condition:
+            lambda: 'return id(r_P1_high).state;'
+          then:
+            - script.stop: manual_p1_high_timer
+            - switch.turn_off: r_P1_high
+            - logger.log: "Faceplate P1: High -> OFF"
+            - if:
+                condition:
+                  lambda: 'return id(virtual_heater).state;'
+                then:
+                  - switch.turn_on: r_P1_low
+                  - logger.log: "Restored P1 Low — heater active."
+          else:
+            - if:
+                condition:
+                  lambda: 'return id(r_P1_low).state;'
+                then:
+                  - script.stop: manual_p1_low_timer
+                  - switch.turn_on: r_P1_high
+                  - script.execute: manual_p1_high_timer
+                  - logger.log: "Faceplate P1: Low -> High"
+                else:
+                  - switch.turn_on: r_P1_low
+                  - script.execute: manual_p1_low_timer
+                  - logger.log: "Faceplate P1: Off -> Low"
+
+  ## P2 cycle: Off → Low → High → Off
+  - id: faceplate_p2_cycle
+    then:
+      - if:
+          condition:
+            lambda: 'return id(r_P2_high).state;'
+          then:
+            - script.stop: manual_p2_high_timer
+            - switch.turn_off: r_P2_high
+            - logger.log: "Faceplate P2: High -> OFF"
+            - if:
+                condition:
+                  lambda: 'return id(filter_running);'
+                then:
+                  - switch.turn_on: r_P2_low
+                  - logger.log: "Restored P2 Low — filter active."
+          else:
+            - if:
+                condition:
+                  lambda: 'return id(r_P2_low).state;'
+                then:
+                  - script.stop: manual_p2_low_timer
+                  - switch.turn_on: r_P2_high
+                  - script.execute: manual_p2_high_timer
+                  - logger.log: "Faceplate P2: Low -> High"
+                else:
+                  - switch.turn_on: r_P2_low
+                  - script.execute: manual_p2_low_timer
+                  - logger.log: "Faceplate P2: Off -> Low"
+
+  ## Setpoint +1°F
+  - id: adjust_setpoint_up
+    then:
+      - lambda: |-
+          float t = id(spa_thermostat).target_temperature + 0.5556f;
+          if (t > 40.6f) t = 40.6f;
+          auto call = id(spa_thermostat).make_call();
+          call.set_target_temperature(t);
+          call.perform();
+          ESP_LOGI("faceplate", "Setpoint UP -> %.1f C", t);
+
+  ## Setpoint −1°F
+  - id: adjust_setpoint_down
+    then:
+      - lambda: |-
+          float t = id(spa_thermostat).target_temperature - 0.5556f;
+          if (t < 5.0f) t = 5.0f;
+          auto call = id(spa_thermostat).make_call();
+          call.set_target_temperature(t);
+          call.perform();
+          ESP_LOGI("faceplate", "Setpoint DOWN -> %.1f C", t);
+
+  ## Config mode placeholder (hold P1 + Temp Down for 10s)
+  - id: enter_config_mode
+    then:
+      - logger.log: "CONFIG MODE ENTERED (placeholder)"
+      - globals.set:
+          id: config_mode
+          value: 'true'
+
+  ###########################################################################
+  ## PUMP 2 HIGH — manual HA button toggle + auto-off
+  ###########################################################################
+
+  - id: manual_p2_high
+    then:
+      - if:
+          condition:
+            lambda: 'return id(r_P2_high).state;'
+          then:
+            - if:
+                condition:
+                  lambda: 'return !id(filter_running);'
+                then:
+                  - script.stop: manual_p2_high_timer
+                  - switch.turn_off: r_P2_high
+                  - logger.log: "Manual Pump 2 High OFF."
+                else:
+                  - logger.log: "Manual Pump 2 High OFF BLOCKED — filter active."
+          else:
+            - logger.log:
+                format: "Manual Pump 2 High ON — auto-off in %u min"
                 args: ['id(pump_auto_off_minutes)']
             - switch.turn_on: r_P2_high
             - script.execute: manual_p2_high_timer
 
-  ## Auto-off timer for Pump 2 High. mode: restart so re-toggling resets it.
   - id: manual_p2_high_timer
     mode: restart
     then:
@@ -1360,50 +1406,9 @@ script:
             lambda: 'return !id(filter_running);'
           then:
             - switch.turn_off: r_P2_high
-            - logger.log: "Manual Pump 2 High auto-off — timer expired."
+            - logger.log: "Manual Pump 2 High auto-off expired."
           else:
-            - logger.log: "Manual Pump 2 High auto-off SKIPPED — filter cycle is active."
-
-
-  ###########################################################################
-  ## FACEPLATE BUTTON SCRIPTS — setpoint adjustment and config mode
-  ###########################################################################
-
-  ## Bump thermostat setpoint UP by 1°F (0.5556°C).
-  ## Clamps to the thermostat max of 40.6°C (105°F).
-  - id: adjust_setpoint_up
-    then:
-      - lambda: |-
-          float current = id(spa_thermostat).target_temperature;
-          float new_val = current + 0.5556f;
-          if (new_val > 40.6f) new_val = 40.6f;
-          auto call = id(spa_thermostat).make_call();
-          call.set_target_temperature(new_val);
-          call.perform();
-          ESP_LOGI("faceplate", "Setpoint UP → %.1f°C (%.0f°F)", new_val, new_val * 9.0f / 5.0f + 32.0f);
-
-  ## Bump thermostat setpoint DOWN by 1°F (0.5556°C).
-  ## Clamps to the thermostat min of 5.0°C (41°F).
-  - id: adjust_setpoint_down
-    then:
-      - lambda: |-
-          float current = id(spa_thermostat).target_temperature;
-          float new_val = current - 0.5556f;
-          if (new_val < 5.0f) new_val = 5.0f;
-          auto call = id(spa_thermostat).make_call();
-          call.set_target_temperature(new_val);
-          call.perform();
-          ESP_LOGI("faceplate", "Setpoint DOWN → %.1f°C (%.0f°F)", new_val, new_val * 9.0f / 5.0f + 32.0f);
-
-  ## Config mode — placeholder for future faceplate configuration menu.
-  ## Activated by holding Btn 1 (P1) + Btn 4 (Temp Down) for 10 seconds.
-  - id: enter_config_mode
-    then:
-      - logger.log: "CONFIG MODE ENTERED (placeholder)"
-      - globals.set:
-          id: config_mode
-          value: 'true'
-
+            - logger.log: "Manual Pump 2 High auto-off SKIPPED — filter active."
 
   ###########################################################################
   ## STARTUP TEST ABORT — kill everything, set failure flags
@@ -1417,7 +1422,7 @@ script:
       - switch.turn_off: r_P1_low
       - switch.turn_off: r_P1_high
       - switch.turn_off: r_Circ
-      - switch.turn_off: r_P2_high
+      - switch.turn_off: r_P2_low
       - globals.set:
           id: boot_failed
           value: 'true'
@@ -1455,7 +1460,7 @@ script:
       - switch.turn_off: r_P1_low
       - switch.turn_off: r_P1_high
       - switch.turn_off: r_Circ
-      - switch.turn_off: r_P2_high
+      - switch.turn_off: r_P2_low
       - logger.log: "All outputs OFF. Waiting for sensors to stabilize..."
       - delay: 3s
       ## Prime sensor filter chains (median window 5 + EMA alpha 0.15)
@@ -1871,9 +1876,9 @@ script:
                   - globals.set:
                       id: filter_last_run_time
                       value: !lambda 'return millis();'
-                  - switch.turn_on: r_P2_high
+                  - switch.turn_on: r_P2_low
                   - delay: !lambda 'return id(filter_runtime_minutes) * 60000U;'
-                  - switch.turn_off: r_P2_high
+                  - switch.turn_off: r_P2_low
                   - globals.set:
                       id: filter_running
                       value: 'false'
@@ -1895,9 +1900,9 @@ script:
             - globals.set:
                 id: filter_last_run_time
                 value: !lambda 'return millis();'
-            - switch.turn_on: r_P2_high
+            - switch.turn_on: r_P2_low
             - delay: !lambda 'return id(filter_runtime_minutes) * 60000U;'
-            - switch.turn_off: r_P2_high
+            - switch.turn_off: r_P2_low
             - globals.set:
                 id: filter_running
                 value: 'false'
@@ -1927,33 +1932,45 @@ interval:
     then:
       - script.execute: filter_cycle_loop
 
-  ## LVGL faceplate display refresh — updates all on-screen labels
+
+  ## ── LVGL Faceplate Refresh (every 2s) ─────────────────────────────────
   - interval: 2s
     then:
       - lvgl.label.update:
           id: lbl_wifi
-          text:
-            format: "%ddBm"
-            args: ['(int)id(wifi_rssi).state']
+          text: !lambda |-
+            static char buf[8];
+            snprintf(buf, sizeof(buf), "%ddBm", (int)id(wifi_rssi).state);
+            return std::string(buf);
       - lvgl.label.update:
           id: lbl_temp_current
           text: !lambda |-
-            if (isnan(id(spa_temp).state)) return "--.-°F";
-            float f = id(spa_temp).state * 9.0f / 5.0f + 32.0f;
+            if (isnan(id(spa_temp).state)) return std::string("--.-°C");
             static char buf[12];
-            snprintf(buf, sizeof(buf), "%.1f°F", f);
+            snprintf(buf, sizeof(buf), "%.1f°C", id(spa_temp).state);
             return std::string(buf);
       - lvgl.label.update:
           id: lbl_temp_setpoint
           text: !lambda |-
-            float c = id(spa_thermostat).target_temperature;
-            if (isnan(c)) return "Set: --°F";
-            float f = c * 9.0f / 5.0f + 32.0f;
+            float t = id(spa_thermostat).target_temperature;
+            if (isnan(t)) return std::string("Set: --.-°C");
             static char buf[16];
-            snprintf(buf, sizeof(buf), "Set: %.0f°F", f);
+            snprintf(buf, sizeof(buf), "Set: %.1f°C", t);
             return std::string(buf);
+      - lvgl.label.update:
+          id: lbl_p1
+          text: !lambda |-
+            if (id(r_P1_high).state) return std::string("P1:Hi");
+            if (id(r_P1_low).state) return std::string("P1:Lo");
+            return std::string("P1:Off");
+      - lvgl.label.update:
+          id: lbl_p2
+          text: !lambda |-
+            if (id(r_P2_high).state) return std::string("P2:Hi");
+            if (id(r_P2_low).state) return std::string("P2:Lo");
+            return std::string("P2:Off");
 
-  ## Config-mode detector — hold Btn 1 (P1) + Btn 4 (Temp Down) for 10s
+  ## ── Config Mode Detector (hold P1 + Temp Down 10s) ──────────────────
   - interval: 500ms
     then:
       - lambda: |-
@@ -1969,7 +1986,6 @@ interval:
           }
 
 
-
 ## ═══════════════════════════════════════════════════════════════════════════
 ## CLIMATE — thermostat for spa water temperature
 ## ═══════════════════════════════════════════════════════════════════════════
@@ -1980,7 +1996,7 @@ interval:
 climate:
   - platform: thermostat
     name: "Spa Temp Controller"
-  id: spa_thermostat
+    id: spa_thermostat
     sensor: spa_temp
     min_heating_off_time: 60s
     min_heating_run_time: 3s
