@@ -2029,118 +2029,118 @@ interval:
     then:
       - script.execute: filter_cycle_loop
 
-  ## ── LVGL Faceplate Refresh (every 2s) ─────────────────────────────────
-  - interval: 1s
-    then:
-      - lvgl.label.update:
-          id: lbl_wifi
-          text: !lambda |-
-            static char buf[10];
-            snprintf(buf, sizeof(buf), "%ddBm", (int)id(wifi_rssi).state);
-            return std::string(buf);
-
-
-      - lvgl.label.update:
-          id: lbl_temp_current
-          text: !lambda |-
-            if (isnan(id(spa_temp).state)) return std::string("--.-°F");
-            float f = id(spa_temp).state * 9.0f / 5.0f + 32.0f;
-            static char buf[12];
-            snprintf(buf, sizeof(buf), "%.1f°F", f);
-            return std::string(buf);
-
-      - lvgl.label.update:
-          id: lbl_temp_setpoint
-          text: !lambda |-
-            float t = id(spa_thermostat).target_temperature;
-            if (isnan(t)) return std::string("Set: --.-°F");
-            float f = t * 9.0f / 5.0f + 32.0f;
-            static char buf[18];
-            snprintf(buf, sizeof(buf), "Set: %.1f°F", f);
-            return std::string(buf);
-
-      - lvgl.label.update:
-          id: lbl_p1
-          text: !lambda |-
-            if (id(r_P1_high).state) return std::string("P1: Hi");
-            if (id(r_P1_low).state)  return std::string("P1: Lo");
-            return std::string("P1: Off");
-
-      - lvgl.label.update:
-          id: lbl_p2
-          text: !lambda |-
-            if (id(r_P2_high).state) return std::string("P2: Hi");
-            return std::string("P2: Off");
-  # - interval: 5s
+  # ## ── LVGL Faceplate Refresh (every 2s) ─────────────────────────────────
+  # - interval: 1s
   #   then:
-  #     - lambda: |-
-  #         // ── WiFi RSSI ──────────────────────────────────
-  #         static int last_rssi = 0;
-  #         int rssi = (int)id(wifi_rssi).state;
-  #         if (rssi != last_rssi) {
-  #           last_rssi = rssi;
-  #           char buf[10];
-  #           snprintf(buf, sizeof(buf), "%ddBm", rssi);
-  #           lv_label_set_text(id(lbl_wifi), buf);
-  #         }
+  #     - lvgl.label.update:
+  #         id: lbl_wifi
+  #         text: !lambda |-
+  #           static char buf[10];
+  #           snprintf(buf, sizeof(buf), "%ddBm", (int)id(wifi_rssi).state);
+  #           return std::string(buf);
 
-  #         // ── Current Temp (°F) ──────────────────────────
-  #         static int last_temp_tenths = -9999;
-  #         int temp_tenths;
-  #         if (isnan(id(spa_temp).state)) {
-  #           temp_tenths = -9999;
-  #         } else {
-  #           temp_tenths = (int)(id(spa_temp).state * 18.0f + 320.0f);
-  #         }
-  #         if (temp_tenths != last_temp_tenths) {
-  #           last_temp_tenths = temp_tenths;
-  #           if (temp_tenths == -9999) {
-  #             lv_label_set_text(id(lbl_temp_current), "--.-°F");
-  #           } else {
-  #             float f = id(spa_temp).state * 9.0f / 5.0f + 32.0f;
-  #             char buf[12];
-  #             snprintf(buf, sizeof(buf), "%.1f°F", f);
-  #             lv_label_set_text(id(lbl_temp_current), buf);
-  #           }
-  #         }
 
-  #         // ── Setpoint (°F) ──────────────────────────────
-  #         static int last_sp_tenths = -9999;
-  #         float sp = id(spa_thermostat).target_temperature;
-  #         int sp_tenths;
-  #         if (isnan(sp)) {
-  #           sp_tenths = -9999;
-  #         } else {
-  #           sp_tenths = (int)(sp * 18.0f + 320.0f);
-  #         }
-  #         if (sp_tenths != last_sp_tenths) {
-  #           last_sp_tenths = sp_tenths;
-  #           if (sp_tenths == -9999) {
-  #             lv_label_set_text(id(lbl_temp_setpoint), "Set: --.-°F");
-  #           } else {
-  #             float f = sp * 9.0f / 5.0f + 32.0f;
-  #             char buf[18];
-  #             snprintf(buf, sizeof(buf), "Set: %.1f°F", f);
-  #             lv_label_set_text(id(lbl_temp_setpoint), buf);
-  #           }
-  #         }
+  #     - lvgl.label.update:
+  #         id: lbl_temp_current
+  #         text: !lambda |-
+  #           if (isnan(id(spa_temp).state)) return std::string("--.-°F");
+  #           float f = id(spa_temp).state * 9.0f / 5.0f + 32.0f;
+  #           static char buf[12];
+  #           snprintf(buf, sizeof(buf), "%.1f°F", f);
+  #           return std::string(buf);
 
-  #         // ── Pump 1 Status ──────────────────────────────
-  #         static int last_p1 = -1;
-  #         int p1 = id(r_P1_high).state ? 2 : (id(r_P1_low).state ? 1 : 0);
-  #         if (p1 != last_p1) {
-  #           last_p1 = p1;
-  #           lv_label_set_text(id(lbl_p1),
-  #             p1 == 2 ? "P1:Hi" : p1 == 1 ? "P1:Lo" : "P1:Off");
-  #         }
+  #     - lvgl.label.update:
+  #         id: lbl_temp_setpoint
+  #         text: !lambda |-
+  #           float t = id(spa_thermostat).target_temperature;
+  #           if (isnan(t)) return std::string("Set: --.-°F");
+  #           float f = t * 9.0f / 5.0f + 32.0f;
+  #           static char buf[18];
+  #           snprintf(buf, sizeof(buf), "Set: %.1f°F", f);
+  #           return std::string(buf);
 
-  #         // ── Pump 2 Status ──────────────────────────────
-  #         static int last_p2 = -1;
-  #         int p2 = id(r_P2_high).state ? 1 : 0;
-  #         if (p2 != last_p2) {
-  #           last_p2 = p2;
-  #           lv_label_set_text(id(lbl_p2), p2 ? "P2:Hi" : "P2:Off");
-  #         }
+  #     - lvgl.label.update:
+  #         id: lbl_p1
+  #         text: !lambda |-
+  #           if (id(r_P1_high).state) return std::string("P1: Hi");
+  #           if (id(r_P1_low).state)  return std::string("P1: Lo");
+  #           return std::string("P1: Off");
+
+  #     - lvgl.label.update:
+  #         id: lbl_p2
+  #         text: !lambda |-
+  #           if (id(r_P2_high).state) return std::string("P2: Hi");
+  #           return std::string("P2: Off");
+  - interval: 5s
+    then:
+      - lambda: |-
+          // ── WiFi RSSI ──────────────────────────────────
+          static int last_rssi = 0;
+          int rssi = (int)id(wifi_rssi).state;
+          if (rssi != last_rssi) {
+            last_rssi = rssi;
+            char buf[10];
+            snprintf(buf, sizeof(buf), "%ddBm", rssi);
+            lv_label_set_text(id(lbl_wifi), buf);
+          }
+
+          // ── Current Temp (°F) ──────────────────────────
+          static int last_temp_tenths = -9999;
+          int temp_tenths;
+          if (isnan(id(spa_temp).state)) {
+            temp_tenths = -9999;
+          } else {
+            temp_tenths = (int)(id(spa_temp).state * 18.0f + 320.0f);
+          }
+          if (temp_tenths != last_temp_tenths) {
+            last_temp_tenths = temp_tenths;
+            if (temp_tenths == -9999) {
+              lv_label_set_text(id(lbl_temp_current), "--.-°F");
+            } else {
+              float f = id(spa_temp).state * 9.0f / 5.0f + 32.0f;
+              char buf[12];
+              snprintf(buf, sizeof(buf), "%.1f°F", f);
+              lv_label_set_text(id(lbl_temp_current), buf);
+            }
+          }
+
+          // ── Setpoint (°F) ──────────────────────────────
+          static int last_sp_tenths = -9999;
+          float sp = id(spa_thermostat).target_temperature;
+          int sp_tenths;
+          if (isnan(sp)) {
+            sp_tenths = -9999;
+          } else {
+            sp_tenths = (int)(sp * 18.0f + 320.0f);
+          }
+          if (sp_tenths != last_sp_tenths) {
+            last_sp_tenths = sp_tenths;
+            if (sp_tenths == -9999) {
+              lv_label_set_text(id(lbl_temp_setpoint), "Set: --.-°F");
+            } else {
+              float f = sp * 9.0f / 5.0f + 32.0f;
+              char buf[18];
+              snprintf(buf, sizeof(buf), "Set: %.1f°F", f);
+              lv_label_set_text(id(lbl_temp_setpoint), buf);
+            }
+          }
+
+          // ── Pump 1 Status ──────────────────────────────
+          static int last_p1 = -1;
+          int p1 = id(r_P1_high).state ? 2 : (id(r_P1_low).state ? 1 : 0);
+          if (p1 != last_p1) {
+            last_p1 = p1;
+            lv_label_set_text(id(lbl_p1),
+              p1 == 2 ? "P1:Hi" : p1 == 1 ? "P1:Lo" : "P1:Off");
+          }
+
+          // ── Pump 2 Status ──────────────────────────────
+          static int last_p2 = -1;
+          int p2 = id(r_P2_high).state ? 1 : 0;
+          if (p2 != last_p2) {
+            last_p2 = p2;
+            lv_label_set_text(id(lbl_p2), p2 ? "P2:Hi" : "P2:Off");
+          }
   ### ── Config Mode Detector (hold P1 + Temp Down 10s) ──────────────────
   - interval: 500ms
     then:
