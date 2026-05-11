@@ -74,7 +74,7 @@
 ###   Pin 11   │  6   │ GPIO27 │ r_P1_high       │ Switch   │ Pump 1 — high speed
 ###   Pin 12   │  8   │ —      │ —               │ Output   │ Light relay (unconnected)
 ###   Pin 13   │ 10   │ GPIO14 │ r_Circ          │ Switch   │ Circulator pump
-###   Pin 14   │ 12   │ GPIO12 │ [reserved]      │ —        │ Pump 2 Low (future)
+###   Pin 14   │ 12   │ GPIO21 │ [reserved]      │ —        │ Pump 2 Low (future)
 ###   Pin 15   │ 14   │ GPIO13 │ r_P2_high       │ Switch   │ Pump 2 — high speed
 ###
 ### ═══════════════════════════════════════════════════════════════════════════
@@ -110,10 +110,10 @@
 ###   GPIO23│ (I²C SCL)       │ I²C      │ SSD1306 OLED display clock
 ###   GPIO19│ btn_p1          │ Input PU │ Pump 1 cycle button
 ###   GPIO18│ btn_p2          │ Input PU │ Pump 2 cycle button
-###   GPIO5 │ btn_temp_up     │ Input PU │ Temperature setpoint UP
+###   GPIO16│ btn_temp_up     │ Input PU │ Temperature setpoint UP
 ###   GPIO17│ btn_temp_down   │ Input PU │ Temperature setpoint DOWN
 ###
-### NOTE: GPIO5 is a strapping pin — internal pull-up to HIGH at boot
+### NOTE: GPIO16 is a strapping pin — internal pull-up to HIGH at boot
 ###       is the correct/safe default (button not pressed = HIGH). ✓
 ###
 ### BUTTON BEHAVIOUR
@@ -490,7 +490,7 @@ captive_portal:
 i2c:
   sda: GPIO22
   scl: GPIO23
-  scan: true
+ 
   frequency: 400kHz
 
 ### ═══════════════════════════════════════════════════════════════════════════
@@ -611,7 +611,7 @@ globals:
   - id: heater_pulse_ms
     type: uint32_t
     restore_value: yes
-    initial_value: "2000"
+    initial_value: "5000"
 
   ### ── Spa Temperature Calibration ──────────────────────────────────────
   ### Additive offset applied to the raw NTC reading. Positive = reads
@@ -649,11 +649,11 @@ globals:
   - id: filter_interval_minutes
     type: uint32_t
     restore_value: yes
-    initial_value: "240"
+    initial_value: "120"
   - id: filter_runtime_minutes
     type: uint32_t
     restore_value: yes
-    initial_value: "60"
+    initial_value: "10"
   ### True while a filter cycle (automatic or manual) is actively running.
   ### Used by the filter timer text sensors and to prevent overlapping runs.
   - id: filter_running
@@ -752,7 +752,7 @@ switch:
   # Pin 14 — reserved for future P2 Low. Driven low to prevent
   # GPIO12 strapping pin from floating high at boot.
   - platform: gpio
-    pin: GPIO12
+    pin: GPIO21
     id: r_P2_low_reserved
     inverted: false
 
@@ -888,7 +888,7 @@ sensor:
   - platform: adc
     id: spa_sensor
     pin: GPIO34
-    update_interval: 10s
+    update_interval: 2s
     name: "Spa Voltage"
     attenuation: 12db
     samples: 64
@@ -909,8 +909,8 @@ sensor:
     calibration:
       - 10.0kOhm -> 25°C
       - 32.665kOhm -> 0°C
-      - 7.160kOhm -> 35°C
-      #- 6.53kOhm -> 35°C
+      #- 7.160kOhm -> 35°C
+      - 6.53kOhm -> 35°C
     id: spa_temp_raw
     name: "Spa Temperature Raw"
     filters:
@@ -918,7 +918,7 @@ sensor:
           window_size: 5
           send_every: 1
       - exponential_moving_average:
-          alpha: 0.15
+          alpha: 0.50
           send_every: 1
     internal: True
 
@@ -930,7 +930,7 @@ sensor:
     id: spa_temp
     unit_of_measurement: "°C"
     accuracy_decimals: 1
-    update_interval: 10s
+    update_interval: 5s
     lambda: |-
       if (isnan(id(spa_temp_raw).state)) return NAN;
       return id(spa_temp_raw).state + id(spa_temp_offset);
@@ -1012,7 +1012,7 @@ binary_sensor:
   - platform: gpio
     id: btn_temp_up
     pin:
-      number: GPIO5
+      number: GPIO16
       mode: INPUT_PULLUP
       inverted: true
     internal: true
@@ -2029,8 +2029,8 @@ interval:
     then:
       - script.execute: filter_cycle_loop
 
-  ### ── LVGL Faceplate Refresh (every 2s) ─────────────────────────────────
-  - interval: 2s
+  ## ── LVGL Faceplate Refresh (every 2s) ─────────────────────────────────
+  - interval: 1s
     then:
       - lvgl.label.update:
           id: lbl_wifi
@@ -2062,16 +2062,85 @@ interval:
       - lvgl.label.update:
           id: lbl_p1
           text: !lambda |-
-            if (id(r_P1_high).state) return std::string("P1:Hi");
-            if (id(r_P1_low).state)  return std::string("P1:Lo");
-            return std::string("P1:Off");
+            if (id(r_P1_high).state) return std::string("P1: Hi");
+            if (id(r_P1_low).state)  return std::string("P1: Lo");
+            return std::string("P1: Off");
 
       - lvgl.label.update:
           id: lbl_p2
           text: !lambda |-
-            if (id(r_P2_high).state) return std::string("P2:Hi");
-            return std::string("P2:Off");
+            if (id(r_P2_high).state) return std::string("P2: Hi");
+            return std::string("P2: Off");
+  # - interval: 5s
+  #   then:
+  #     - lambda: |-
+  #         // ── WiFi RSSI ──────────────────────────────────
+  #         static int last_rssi = 0;
+  #         int rssi = (int)id(wifi_rssi).state;
+  #         if (rssi != last_rssi) {
+  #           last_rssi = rssi;
+  #           char buf[10];
+  #           snprintf(buf, sizeof(buf), "%ddBm", rssi);
+  #           lv_label_set_text(id(lbl_wifi), buf);
+  #         }
 
+  #         // ── Current Temp (°F) ──────────────────────────
+  #         static int last_temp_tenths = -9999;
+  #         int temp_tenths;
+  #         if (isnan(id(spa_temp).state)) {
+  #           temp_tenths = -9999;
+  #         } else {
+  #           temp_tenths = (int)(id(spa_temp).state * 18.0f + 320.0f);
+  #         }
+  #         if (temp_tenths != last_temp_tenths) {
+  #           last_temp_tenths = temp_tenths;
+  #           if (temp_tenths == -9999) {
+  #             lv_label_set_text(id(lbl_temp_current), "--.-°F");
+  #           } else {
+  #             float f = id(spa_temp).state * 9.0f / 5.0f + 32.0f;
+  #             char buf[12];
+  #             snprintf(buf, sizeof(buf), "%.1f°F", f);
+  #             lv_label_set_text(id(lbl_temp_current), buf);
+  #           }
+  #         }
+
+  #         // ── Setpoint (°F) ──────────────────────────────
+  #         static int last_sp_tenths = -9999;
+  #         float sp = id(spa_thermostat).target_temperature;
+  #         int sp_tenths;
+  #         if (isnan(sp)) {
+  #           sp_tenths = -9999;
+  #         } else {
+  #           sp_tenths = (int)(sp * 18.0f + 320.0f);
+  #         }
+  #         if (sp_tenths != last_sp_tenths) {
+  #           last_sp_tenths = sp_tenths;
+  #           if (sp_tenths == -9999) {
+  #             lv_label_set_text(id(lbl_temp_setpoint), "Set: --.-°F");
+  #           } else {
+  #             float f = sp * 9.0f / 5.0f + 32.0f;
+  #             char buf[18];
+  #             snprintf(buf, sizeof(buf), "Set: %.1f°F", f);
+  #             lv_label_set_text(id(lbl_temp_setpoint), buf);
+  #           }
+  #         }
+
+  #         // ── Pump 1 Status ──────────────────────────────
+  #         static int last_p1 = -1;
+  #         int p1 = id(r_P1_high).state ? 2 : (id(r_P1_low).state ? 1 : 0);
+  #         if (p1 != last_p1) {
+  #           last_p1 = p1;
+  #           lv_label_set_text(id(lbl_p1),
+  #             p1 == 2 ? "P1:Hi" : p1 == 1 ? "P1:Lo" : "P1:Off");
+  #         }
+
+  #         // ── Pump 2 Status ──────────────────────────────
+  #         static int last_p2 = -1;
+  #         int p2 = id(r_P2_high).state ? 1 : 0;
+  #         if (p2 != last_p2) {
+  #           last_p2 = p2;
+  #           lv_label_set_text(id(lbl_p2), p2 ? "P2:Hi" : "P2:Off");
+  #         }
   ### ── Config Mode Detector (hold P1 + Temp Down 10s) ──────────────────
   - interval: 500ms
     then:
