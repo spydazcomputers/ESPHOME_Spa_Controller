@@ -539,6 +539,13 @@ lvgl:
       scrollbar_mode: "OFF"
       widgets:
         - label:
+            id: lbl_lockout
+            align: TOP_LEFT
+            x: 2
+            y: 2
+            text_font: font_label
+            text: ""
+        - label:
             id: lbl_wifi
             align: TOP_RIGHT
             x: -2
@@ -670,6 +677,27 @@ globals:
     type: uint32_t
     restore_value: no
     initial_value: "0"
+
+#### ── Pump Safety Lockout ──────────────────────────────────────────────
+#### When a user manually turns off any pump (faceplate or HA button),
+#### this flag goes true for pump_lockout_minutes. While true, the
+#### thermostat and filter cycle are blocked from starting pumps.
+  - id: pump_safety_lockout
+    type: bool
+    restore_value: no
+    initial_value: "false"
+
+  - id: pump_lockout_minutes
+    type: uint32_t
+    restore_value: yes
+    initial_value: "10"
+
+#### ── Heat Mode Toggle Hold Timer ──────────────────────────────────────
+  - id: heat_toggle_hold_start
+    type: uint32_t
+    restore_value: no
+    initial_value: "0"
+
 
 ### ═══════════════════════════════════════════════════════════════════════════
 ### OUTPUTS — heater safety relay GPIOs (not exposed to HA directly)
@@ -981,6 +1009,11 @@ binary_sensor:
   - platform: template
     name: "Pump 2 High Running"
     lambda: "return id(r_P2_high).state;"
+  
+  - platform: template
+    name: "Pump Safety Lockout Active"
+    id: pump_safety_lockout_sensor
+    lambda: "return id(pump_safety_lockout);"
 
   ### ── Faceplate Buttons (right-side GPIOs, active LOW, internal) ──────
   - platform: gpio
@@ -1113,6 +1146,21 @@ button:
     icon: "mdi:air-filter"
     on_press:
       - script.execute: manual_filter_cycle
+#### Manually cancels the pump safety lockout, re-enabling automation.
+  - platform: template
+    name: "Cancel Pump Lockout"
+    icon: "mdi:lock-open"
+    on_press:
+      - if:
+          condition:
+            lambda: "return id(pump_safety_lockout);"
+          then:
+            - script.stop: activate_pump_lockout
+            - globals.set:
+                id: pump_safety_lockout
+                value: "false"
+            - logger.log: "Pump safety lockout manually cancelled."
+            - script.execute: refresh_display
 
 ### ═══════════════════════════════════════════════════════════════════════════
 ### TEXT SENSORS — filter cycle timers displayed in hh:mm format
@@ -1233,6 +1281,21 @@ number:
           id: filter_runtime_minutes
           value: !lambda "return (uint32_t)x;"
     lambda: "return (float)id(filter_runtime_minutes);"
+#### Pump safety lockout duration — how long heater and filter automation
+#### is blocked after a manual pump-off event.
+  - platform: template
+    name: "Pump Safety Lockout (minutes)"
+    id: pump_lockout_number
+    min_value: 1
+    max_value: 60
+    step: 1
+    mode: box
+    unit_of_measurement: "min"
+    set_action:
+      - globals.set:
+          id: pump_lockout_minutes
+          value: !lambda "return (uint32_t)x;"
+    lambda: "return (float)id(pump_lockout_minutes);"
 
 ### ═══════════════════════════════════════════════════════════════════════════
 ### SCRIPTS — automation logic
@@ -1277,6 +1340,7 @@ script:
                   - script.stop: manual_p1_low_timer
                   - switch.turn_off: r_P1_low
                   - logger.log: "Manual Pump 1 Low OFF — user toggled off."
+                  - script.execute: activate_pump_lockout
                 else:
                   - logger.log: "Manual Pump 1 Low OFF BLOCKED — virtual heater is active."
           else:
@@ -1316,6 +1380,7 @@ script:
             - script.stop: manual_p1_high_timer
             - switch.turn_off: r_P1_high
             - logger.log: "Manual Pump 1 High OFF — user toggled off."
+            - script.execute: activate_pump_lockout
             ## If the heater was running, the interlock killed P1 Low when
             ## jets started. Restore P1 Low to maintain heater flow.
             - if:
@@ -1365,6 +1430,7 @@ script:
                   - script.stop: manual_p2_high_timer
                   - switch.turn_off: r_P2_high
                   - logger.log: "Manual Pump 2 High OFF."
+                  - script.execute: activate_pump_lockout
                 else:
                   - logger.log: "Manual Pump 2 High OFF BLOCKED — filter active."
           else:
@@ -1403,6 +1469,7 @@ script:
             - script.stop: manual_p1_high_timer
             - switch.turn_off: r_P1_high
             - logger.log: "Faceplate P1: High -> OFF"
+            - script.execute: activate_pump_lockout 
             - if:
                 condition:
                   lambda: "return id(virtual_heater).state;"
@@ -1439,6 +1506,7 @@ script:
                   - script.stop: manual_p2_high_timer
                   - switch.turn_off: r_P2_high
                   - logger.log: "Faceplate P2: High -> OFF"
+                  - script.execute: activate_pump_lockout 
           else:
             - switch.turn_on: r_P2_high
             - script.execute: manual_p2_high_timer
@@ -1454,6 +1522,7 @@ script:
           call.set_target_temperature(t);
           call.perform();
           ESP_LOGI("faceplate", "Setpoint UP -> %.1f C", t);
+          script.execute: refresh_display
 
   ### Setpoint −1°F
   - id: adjust_setpoint_down
@@ -1465,6 +1534,7 @@ script:
           call.set_target_temperature(t);
           call.perform();
           ESP_LOGI("faceplate", "Setpoint DOWN -> %.1f C", t);
+          script.execute: refresh_display
 
   ### Config mode placeholder (hold P1 + Temp Down for 10s)
   - id: enter_config_mode
@@ -1962,6 +2032,8 @@ script:
             and:
               - lambda: "return id(filter_cycle_enabled);"
               - lambda: "return !id(filter_running);"
+              - lambda: "return !id(pump_safety_lockout);"  
+             
           then:
             - if:
                 condition:
@@ -1989,7 +2061,7 @@ script:
     then:
       - if:
           condition:
-            lambda: "return !id(filter_running);"
+            lambda: "return !id(filter_running)&& !id(pump_safety_lockout);"
           then:
             - logger.log: "Manual filter cycle triggered (P2 High)"
             - globals.set:
@@ -2006,7 +2078,90 @@ script:
                 value: "false"
             - logger.log: "Manual filter cycle complete"
           else:
-            - logger.log: "Filter cycle already running — ignoring manual trigger."
+            - logger.log: "Filter cycle already running — ignoring manual trigger. Or safety lockout active."
+###########################################################################
+## DISPLAY REFRESH — called by faceplate buttons for instant feedback
+###########################################################################
+  - id: refresh_display
+    then:
+      - lambda: |-
+          char buf[18];
+          // WiFi
+          snprintf(buf, sizeof(buf), "%ddBm", (int)id(wifi_rssi).state);
+          lv_label_set_text(id(lbl_wifi), buf);
+          // Current temp (°F)
+          if (isnan(id(spa_temp).state)) {
+            lv_label_set_text(id(lbl_temp_current), "--.-°F");
+          } else {
+            float f = id(spa_temp).state * 9.0f / 5.0f + 32.0f;
+            snprintf(buf, sizeof(buf), "%.1f°F", f);
+            lv_label_set_text(id(lbl_temp_current), buf);
+          }
+          // Setpoint / Mode
+          if (id(spa_thermostat).mode == climate::CLIMATE_MODE_OFF) {
+            lv_label_set_text(id(lbl_temp_setpoint), "Heat: OFF");
+          } else {
+            float sp = id(spa_thermostat).target_temperature;
+            if (isnan(sp)) {
+              lv_label_set_text(id(lbl_temp_setpoint), "Set: --.-°F");
+            } else {
+              float f = sp * 9.0f / 5.0f + 32.0f;
+              snprintf(buf, sizeof(buf), "Set: %.1f°F", f);
+              lv_label_set_text(id(lbl_temp_setpoint), buf);
+            }
+          }
+          // P1
+          lv_label_set_text(id(lbl_p1),
+            id(r_P1_high).state ? "P1:Hi" : id(r_P1_low).state ? "P1:Lo" : "P1:Off");
+          // P2
+          lv_label_set_text(id(lbl_p2),
+            id(r_P2_high).state ? "P2:Hi" : "P2:Off");
+          
+          // ── Lockout Indicator ──────────────────────────
+          lv_label_set_text(id(lbl_lockout),
+            id(pump_safety_lockout) ? "LOCKOUT" : "");
+
+###########################################################################
+## PUMP SAFETY LOCKOUT — blocks thermostat + filter for N minutes
+## mode: restart — re-triggering resets the countdown.
+###########################################################################
+  - id: activate_pump_lockout
+    mode: restart
+    then:
+      - logger.log:
+          format: "PUMP SAFETY LOCKOUT — automation blocked for %u minutes."
+          args: ["id(pump_lockout_minutes)"]
+      - globals.set:
+          id: pump_safety_lockout
+          value: "true"
+      ## Kill virtual heater if running
+      - if:
+          condition:
+            lambda: "return id(virtual_heater).state;"
+          then:
+            - switch.turn_off: virtual_heater
+            - logger.log: "Virtual heater shut down by safety lockout."
+      ## Stop filter cycle if running
+      - if:
+          condition:
+            lambda: "return id(filter_running);"
+          then:
+            - switch.turn_off: r_P2_high
+            - globals.set:
+                id: filter_running
+                value: "false"
+            - logger.log: "Filter cycle stopped by safety lockout."
+      - homeassistant.service:
+          service: persistent_notification.create
+          data:
+            title: "Spa Controller — Pump Safety Lockout"
+            message: "Manual pump-off detected. Heater and filter automation disabled for lockout period."
+      - delay: !lambda "return id(pump_lockout_minutes) * 60000U;"
+      - globals.set:
+          id: pump_safety_lockout
+          value: "false"
+      - script.execute: refresh_display    
+      - logger.log: "Pump safety lockout EXPIRED — automation re-enabled."
 
 ### ═══════════════════════════════════════════════════════════════════════════
 ### INTERVALS — periodic background tasks
@@ -2104,18 +2259,21 @@ interval:
             }
           }
 
-          // ── Setpoint (°F) ──────────────────────────────
+          // ── Setpoint / Mode ───────────────────────────
           static int last_sp_tenths = -9999;
+          static int last_mode = -1;
+          int mode = (id(spa_thermostat).mode == climate::CLIMATE_MODE_HEAT) ? 1 : 0;
           float sp = id(spa_thermostat).target_temperature;
           int sp_tenths;
-          if (isnan(sp)) {
-            sp_tenths = -9999;
-          } else {
-            sp_tenths = (int)(sp * 18.0f + 320.0f);
-          }
-          if (sp_tenths != last_sp_tenths) {
+          if (isnan(sp)) sp_tenths = -9999;
+          else sp_tenths = (int)(sp * 18.0f + 320.0f);
+
+          if (sp_tenths != last_sp_tenths || mode != last_mode) {
             last_sp_tenths = sp_tenths;
-            if (sp_tenths == -9999) {
+            last_mode = mode;
+            if (mode == 0) {
+              lv_label_set_text(id(lbl_temp_setpoint), "Heat: OFF");
+            } else if (sp_tenths == -9999) {
               lv_label_set_text(id(lbl_temp_setpoint), "Set: --.-°F");
             } else {
               float f = sp * 9.0f / 5.0f + 32.0f;
@@ -2141,11 +2299,41 @@ interval:
             last_p2 = p2;
             lv_label_set_text(id(lbl_p2), p2 ? "P2:Hi" : "P2:Off");
           }
+          // ── Lockout Indicator ──────────────────────────
+          static bool last_lockout = false;
+          bool lockout = id(pump_safety_lockout);
+          if (lockout != last_lockout) {
+            last_lockout = lockout;
+            lv_label_set_text(id(lbl_lockout), lockout ? "LOCKOUT" : "");
+          }
   ### ── Config Mode Detector (hold P1 + Temp Down 10s) ──────────────────
   - interval: 500ms
     then:
-      - lambda: |-
-          if (id(btn_p1).state && id(btn_temp_down).state) {
+  - lambda: |-
+        // ── Heat Mode Toggle — hold Temp Up + Temp Down for 3s ──────
+        if (id(btn_temp_up).state && id(btn_temp_down).state) {
+          if (id(heat_toggle_hold_start) == 0) {
+            id(heat_toggle_hold_start) = millis();
+          } else if (millis() - id(heat_toggle_hold_start) > 3000) {
+            auto call = id(spa_thermostat).make_call();
+            if (id(spa_thermostat).mode == climate::CLIMATE_MODE_HEAT) {
+              call.set_mode(climate::CLIMATE_MODE_OFF);
+              ESP_LOGI("faceplate", "Thermostat toggled to OFF");
+            } else {
+              call.set_mode(climate::CLIMATE_MODE_HEAT);
+              ESP_LOGI("faceplate", "Thermostat toggled to HEAT");
+            }
+            call.perform();
+            id(refresh_display).execute();
+            id(heat_toggle_hold_start) = 0;
+          }
+        } else {
+          id(heat_toggle_hold_start) = 0;
+        }
+
+        // ── Config Mode Detector (hold P1 + Temp Down 10s) ─────────
+        if (id(btn_p1).state && id(btn_temp_down).state) {
+
             if (id(config_hold_start) == 0) {
               id(config_hold_start) = millis();
             } else if (millis() - id(config_hold_start) > 10000) {
@@ -2176,7 +2364,7 @@ climate:
     heat_action:
       - if:
           condition:
-            lambda: "return id(startup_test_complete) && !id(high_temp_alarm) && !id(boot_failed);"
+            lambda: "return id(startup_test_complete) && !id(high_temp_alarm) && !id(boot_failed) && !id(pump_lockout_active);"
           then:
             - switch.turn_on: virtual_heater
     idle_action:
