@@ -29,7 +29,7 @@
 ###
 ### IMPORTANT NOTE (May 2026):
 ###   Pump 2 LOW speed is NOT supported by the current motor/pump.
-###   DB15 Pin 14 / GPIO12 is RESERVED for future P2 Low support.
+###   DB15 Pin 14 / GPIO21 is RESERVED for future P2 Low support.
 ###   All filter cycle and manual P2 logic uses P2 HIGH only.
 ###
 ### ════════════════════════════════════════════════════════════════════════════
@@ -437,8 +437,8 @@
 ###   Pump 1 Low           — Toggle P1 Low (auto-off timer)
 ###   Pump 1 High (Jets)   — Toggle P1 High (auto-off timer)
 ###   Pump 2 High          — Toggle P2 High (auto-off timer)
-###   Reset Hi-Limit       — Clears alarm, allows heating to resume
-###   Retry Startup Test   — Re-runs full test sequence
+###   Reset Hi-Limit       — Clears alarm, allows heating to resume  [config]
+###   Retry Startup Test   — Re-runs full test sequence             [config]
 ###   Run Filter Cycle     — Manual filter trigger
 ###   Cancel Pump Lockout  — Ends pump safety lockout early
 ###
@@ -468,8 +468,8 @@
 ###   hi_limit_triggered      │ bool    │ no      │ Latched alarm flag
 ###   boot_testing_active     │ bool    │ no      │ Suppresses sensor polling
 ###   boot_failed             │ bool    │ no      │ Blocks heating
-###   heater_temp_baseline_in │ float   │ no      │ Test reference temp
-###   heater_temp_baseline_out│ float   │ no      │ Test reference temp
+###   heater_temp_baseline_inlet │ float   │ no      │ Test reference temp
+###   heater_temp_baseline_outlet│ float   │ no      │ Test reference temp
 ###   heater_pulse_ms         │ uint32  │ yes     │ Test pulse duration
 ###   spa_temp_offset         │ float   │ yes     │ Spa NTC cal offset
 ###   temp_deadband           │ float   │ no      │ Rise/fall threshold
@@ -654,7 +654,7 @@ lvgl:
             x: 2
             y: 38
             text_font: font_info
-            text: "Set: --.-°C"
+            text: "Set: --.-°F"
         - label:
             id: lbl_p1
             x: 6
@@ -868,8 +868,8 @@ switch:
     inverted: false
     name: "Circ Pump"
 
-  # Pin 14 — reserved for future P2 Low. Driven low to prevent
-  # GPIO16 strapping pin from floating high at boot.
+  # Pin 14 — reserved for future P2 Low. Driven low at startup to
+  # prevent accidental relay activation if the GPIO floats.
   - platform: gpio
     pin: GPIO21
     id: r_P2_low_reserved
@@ -1220,6 +1220,7 @@ button:
   - platform: template
     name: "Reset Hi-Limit"
     icon: "mdi:restart-alert"
+    entity_category: config
     on_press:
       - logger.log: "Manual hi-limit reset triggered by user."
       - globals.set:
@@ -1239,6 +1240,7 @@ button:
   - platform: template
     name: "Retry Startup Test"
     icon: "mdi:test-tube"
+    entity_category: config
     on_press:
       - logger.log: "Manual startup test retry triggered by user."
       - script.execute: startup_test_sequence
